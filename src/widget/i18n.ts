@@ -11,6 +11,7 @@
 import type { Locale } from "../lib/locale.js";
 
 export interface Strings {
+  map: string;
   tabList: string;
   tabResult: string;
   more: (n: number) => string;
@@ -30,6 +31,7 @@ export interface Strings {
 }
 
 const ko: Strings = {
+  map: "지도",
   tabList: "목록",
   tabResult: "결과",
   more: (n) => `더 정하기 (${n})`,
@@ -49,6 +51,7 @@ const ko: Strings = {
 };
 
 const en: Strings = {
+  map: "Map",
   tabList: "List",
   tabResult: "Result",
   more: (n) => `Decide more (${n})`,

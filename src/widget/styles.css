@@ -33,6 +33,115 @@
   overflow-wrap: anywhere;
 }
 
+.uu-header-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-weight: var(--font-weight-medium, 500);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+}
+
+.uu-header-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uu-maplabel {
+  flex: 0 0 auto;
+  font-weight: var(--font-weight-normal, 400);
+  color: var(--color-text-tertiary, inherit);
+  opacity: 0.6;
+  font-size: var(--font-text-xs-size, 11.5px);
+}
+
+/* ── map ──────────────────────────────────────────────────────────────── */
+
+/*
+ * A read-out, not a control surface. Nodes navigate to an axis; they never
+ * change one. Solid spoke means decided, dashed means not — the same grammar
+ * the icons use.
+ */
+.uu-map {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-text-primary, inherit);
+  overflow: visible;
+}
+
+.uu-map line {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.32;
+}
+
+.uu-map rect {
+  stroke: currentColor;
+  stroke-width: 1.5;
+  opacity: 0.55;
+}
+
+.uu-node {
+  cursor: pointer;
+}
+
+/* `transparent`, not `none` — a fill of `none` is not hit-testable. */
+.uu-node-hit {
+  fill: transparent;
+  stroke: none;
+}
+
+.uu-node.is-set line,
+.uu-node.is-set rect {
+  opacity: 1;
+}
+
+.uu-node:hover line,
+.uu-node:hover rect {
+  opacity: 1;
+}
+
+.uu-node text {
+  fill: currentColor;
+  font-size: var(--font-text-xs-size, 11.5px);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.uu-node.is-set text {
+  opacity: 1;
+}
+
+/* Outer ring reads as secondary: smaller label to match the smaller node. */
+.uu-node.is-extra text {
+  font-size: 10.5px;
+}
+
+.uu-node:focus-visible {
+  outline: 1px solid currentColor;
+}
+
+.uu-map-hub {
+  fill: var(--color-background-primary, canvas);
+  stroke: var(--color-border-primary, rgba(128, 128, 128, 0.32));
+  stroke-width: 1;
+}
+
+.uu-map-intent {
+  fill: currentColor;
+  font-size: var(--font-text-xs-size, 11.5px);
+  pointer-events: none;
+}
+
 /* ── tabs ─────────────────────────────────────────────────────────────── */
 
 .uu-tabs {

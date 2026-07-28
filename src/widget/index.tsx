@@ -9,7 +9,7 @@
  * light or dark theme without shipping a palette of its own.
  */
 
-import { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react-with-deps";
 
@@ -18,7 +18,18 @@ import type { Fix, Unfolded } from "../lib/schema.js";
 import type { Locale } from "../lib/locale.js";
 import { strings } from "./i18n.js";
 import { AxisList } from "./AxisList.js";
+import { MapView } from "./MapView.js";
 import { Result } from "./Result.js";
+import { useWidth } from "./useWidth.js";
+import { Icon } from "./icons.js";
+
+/**
+ * Below this the map is not drawn at all — the header stands alone.
+ *
+ * A radial diagram squeezed into a phone-width column is unreadable, and a
+ * cramped one is worse than none.
+ */
+const MAP_MIN_WIDTH = 520;
 
 interface Payload {
   unfolded: Unfolded;
@@ -87,6 +98,11 @@ function App() {
   const [tab, setTab] = useState<"list" | "result">("list");
   const [extrasOpen, setExtrasOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Folded by default; the header is what shows until it is opened.
+  const [mapOpen, setMapOpen] = useState(false);
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  const width = useWidth(rootRef);
 
   const { app } = useApp({
     appInfo: { name: "unknown-unknowns", version: "0.1.0" },
@@ -147,11 +163,57 @@ function App() {
     return () => clearTimeout(timer);
   }, [copied]);
 
-  if (!payload) return <div className="uu-root" />;
+  /**
+   * Follow a map node to its axis.
+   *
+   * The map navigates, it does not edit — so this lands on the row in the list
+   * tab, opening the extras fold first if the axis is hiding inside it.
+   */
+  const gotoAxis = useCallback(
+    (axisId: string) => {
+      const axis = payload?.unfolded.axes.find((a) => a.id === axisId);
+      if (axis && axis.group !== "core") setExtrasOpen(true);
+      setTab("list");
+
+      // After the fold has rendered, not before.
+      requestAnimationFrame(() => {
+        rootRef.current
+          ?.querySelector(`[data-axis="${CSS.escape(axisId)}"]`)
+          ?.scrollIntoView({ block: "center", behavior: "smooth" });
+      });
+    },
+    [payload],
+  );
+
+  if (!payload) return <div className="uu-root" ref={rootRef} />;
+
+  const showMap = width >= MAP_MIN_WIDTH;
 
   return (
-    <div className="uu-root">
-      <div className="uu-header">{payload.unfolded.intent}</div>
+    <div className="uu-root" ref={rootRef}>
+      {showMap ? (
+        <button
+          type="button"
+          className="uu-header uu-header-btn"
+          onClick={() => setMapOpen((v) => !v)}
+          aria-expanded={mapOpen}
+        >
+          <Icon name={mapOpen ? "i-less" : "i-more"} />
+          <span className="uu-header-text">{payload.unfolded.intent}</span>
+          <span className="uu-maplabel">{t.map}</span>
+        </button>
+      ) : (
+        <div className="uu-header">{payload.unfolded.intent}</div>
+      )}
+
+      {showMap && mapOpen ? (
+        <MapView
+          resolved={resolved}
+          intent={payload.unfolded.intent}
+          onPick={gotoAxis}
+          width={width}
+        />
+      ) : null}
 
       <div className="uu-tabs" role="tablist">
         <button

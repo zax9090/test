@@ -90,7 +90,7 @@ const prompt = (frame) => frame.locator(".uu-prompt");
 test("renders the request and its core axes", async ({ page }) => {
   const frame = await open(page);
 
-  await expect(frame.locator(".uu-header")).toHaveText("고양이 이미지 만들어줘");
+  await expect(frame.locator(".uu-header-text")).toHaveText("고양이 이미지 만들어줘");
   await expect(frame.locator(".uu-label").filter({ hasText: "털색" })).toBeVisible();
   await expect(frame.locator(".uu-label").filter({ hasText: "자세" })).toBeVisible();
   await expect(frame.locator(".uu-norm")).toHaveText("보통 단색이 인식률이 높습니다");
@@ -290,6 +290,88 @@ test("switches its own chrome to English for an English request", async ({ page 
 
   await expect(frame.locator(".uu-tab").first()).toHaveText("List");
   await expect(frame.locator(".uu-tab").nth(1)).toHaveText("Result");
+});
+
+// ── the map ────────────────────────────────────────────────────────────────
+
+const setIframeWidth = (page, px) =>
+  page.evaluate((w) => {
+    document.querySelector("#app").style.width = `${w}px`;
+  }, px);
+
+test("the map is folded until asked for", async ({ page }) => {
+  const frame = await open(page);
+
+  await expect(frame.locator(".uu-header-btn")).toContainText("고양이 이미지 만들어줘");
+  await expect(frame.locator(".uu-maplabel")).toHaveText("지도");
+  await expect(frame.locator(".uu-map")).toHaveCount(0);
+
+  await frame.locator(".uu-header-btn").click();
+  await expect(frame.locator(".uu-map")).toBeVisible();
+});
+
+test("draws every axis, centred on the request", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-header-btn").click();
+
+  await expect(frame.locator(".uu-node")).toHaveCount(5);
+  await expect(frame.locator(".uu-map-intent")).toContainText("고양이");
+  // core inside, extra outside
+  await expect(frame.locator(".uu-node.is-extra")).toHaveCount(3);
+});
+
+test("spokes are solid for decided axes and dashed for undecided ones", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await frame.locator(".uu-header-btn").click();
+
+  const coat = frame.locator('[data-node="coat"] line');
+  const pose = frame.locator('[data-node="pose"] line');
+
+  await expect(coat).not.toHaveAttribute("stroke-dasharray", /.+/);
+  await expect(pose).toHaveAttribute("stroke-dasharray", "3 3");
+});
+
+test("a node moves to its axis in the list instead of editing it", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-header-btn").click();
+
+  const before = await prompt(frame).innerText();
+  await frame.locator('[data-node="pose"] .uu-node-hit').click();
+
+  // Navigates, never edits.
+  await expect(frame.locator(".uu-tab", { hasText: "목록" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(prompt(frame)).toHaveText(before);
+  await expect(frame.locator('.uu-row[data-axis="pose"]')).toBeInViewport();
+});
+
+test("a node inside the fold opens the fold on the way", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-header-btn").click();
+
+  // `bg` is an extra, so its row is not rendered yet.
+  await expect(frame.locator('.uu-row[data-axis="bg"]')).toHaveCount(0);
+  await frame.locator('[data-node="bg"] .uu-node-hit').click();
+  await expect(frame.locator('.uu-row[data-axis="bg"]')).toBeInViewport();
+});
+
+test("no map at all below the narrow threshold", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-header-btn").click();
+  await expect(frame.locator(".uu-map")).toBeVisible();
+
+  await setIframeWidth(page, 440);
+
+  // Header only — and the toggle goes with it, so there is nothing to open.
+  await expect(frame.locator(".uu-map")).toHaveCount(0);
+  await expect(frame.locator(".uu-header-btn")).toHaveCount(0);
+  await expect(frame.locator(".uu-header")).toContainText("고양이 이미지 만들어줘");
+
+  await setIframeWidth(page, 640);
+  await expect(frame.locator(".uu-header-btn")).toBeVisible();
 });
 
 test("uses no emoji anywhere in its own chrome", async ({ page }) => {
