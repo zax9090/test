@@ -1,0 +1,26 @@
+name = "unknown-unknowns"
+main = "src/server.ts"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Owns one MCP session each. The server object has to outlive a single request
+# so a sampling reply, which arrives on its own POST, can resolve the request
+# that is waiting for it.
+[[durable_objects.bindings]]
+name = "MCP_SESSION"
+class_name = "McpSession"
+
+# Holds one unfold result per request id so `preview` can regenerate samples from
+# the original material. Thirty-minute TTL, enforced by an alarm inside the
+# object. A module-global cache cannot do this on Workers — isolates are evicted
+# without notice. See docs/stage0-conflicts.md (C4).
+[[durable_objects.bindings]]
+name = "REQUEST_STORE"
+class_name = "RequestStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["McpSession", "RequestStore"]
+
+[observability]
+enabled = true
