@@ -5,7 +5,6 @@
     "moduleResolution": "bundler",
     "lib": ["ES2022"],
     "types": ["@cloudflare/workers-types"],
-    "jsx": "react-jsx",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
@@ -16,5 +15,8 @@
     "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*", "test/**/*"]
+  // The widget is browser code and needs DOM types, which conflict with the
+  // Workers globals. It is typechecked separately by src/widget/tsconfig.json.
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["src/widget/**"]
 }

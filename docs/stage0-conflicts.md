@@ -182,10 +182,52 @@ npm에 `@modelcontextprotocol/core` · `client` · `server` · `node`가 **2.0.0
 
 ---
 
-## 결정 요청
+### C7 — 두 번 호출하는 폴백은 빈 위젯을 남긴다 **(3단계에서 발견)**
 
-1. **C2** — `[대화에 넣기]`: (a) 제거 / (b) 자동 실행 수용하고 이름 변경 / (c) 조용한 컨텍스트 주입
-2. **C3** — 아이콘: 원본 `icons.svg` 재전달 / 명시된 문법대로 직접 제작
-3. **C4** — `preview` 시그니처를 무상태로 변경해도 되는가
+문서 130행은 sampling이 없을 때 이렇게 하라고 한다.
 
-C1·C5·C6은 조치가 정해져 있어 결정 없이 진행 가능하다.
+> 위 지시문을 **도구 결과 텍스트로 반환해** 호스트 모델이 직접 축을 만들고
+> **`unfold`를 다시 부르게 한다.** 이 경로에서도 위젯은 떠야 한다.
+
+그런데 스펙은 이렇게 정한다.
+
+> If `ui.resourceUri` is present and host supports MCP Apps,
+> **host renders tool results using the specified UI resource**
+
+즉 `_meta.ui.resourceUri`를 단 도구는 **호출될 때마다 예외 없이 위젯을 띄운다.**
+게다가 공식 스킬이 못박는다 — "the next call to the same tool **mounts another
+iframe alongside it**". 인스턴스는 재사용되지 않는다.
+
+따라서 두 번 호출 설계의 실제 결과는:
+
+```
+1번째 호출 (지시문 반환)  → 내용 없는 빈 위젯이 뜬다
+2번째 호출 (축 전달)      → 진짜 위젯이 그 아래 또 뜬다
+```
+
+**해결 — 호출을 한 번으로 만든다.** 클라이언트 capability에 따라 도구 모양을 바꾼다.
+
+| 클라이언트 | `unfold` 모양 | 축을 뽑는 주체 |
+|---|---|---|
+| sampling 있음 | `unfold(request, source?)` | 서버가 sampling으로 |
+| sampling 없음 | `unfold(request, source?, unfolded)` | 호스트 모델이 도구 인자로 |
+
+축 뽑기 지시문은 후자의 **도구 설명(description)에** 실린다. 어느 쪽이든 호출은
+정확히 한 번이고, 빈 위젯은 생기지 않는다.
+
+구현상 한 가지 제약이 더 있었다. capability는 `initialize` 이후에만 알 수 있는데,
+**도구를 그때 처음 등록하면 실패한다** — 첫 `registerTool`이 `registerCapabilities`를
+호출하고, 이건 transport 연결 후에 부르면 throw한다. 그래서 넓은 쪽 모양으로 먼저
+등록해두고 `oninitialized`에서 `tool.update()`로 좁힌다. 부수 효과로, 좁히기가 실행되지
+않아도 기본값이 Claude에 맞는 모양이라 안전하다.
+
+---
+
+## 결정 (완료)
+
+| # | 결정 | 상태 |
+|---|---|---|
+| C2 | `[복사]` + `[대화로 보내기]` 둘 다. 후자는 자동 실행을 수용하고 이름으로 밝힘 | 3단계 반영 |
+| C3 | 명시된 문법대로 아이콘 8개 직접 제작 | 3단계 반영 |
+| C4 | `requestId` 유지 + Durable Object | 1단계 반영, 5단계에서 사용 |
+| C1·C5·C6·C7 | 조치 확정, 결정 불필요 | 반영 완료 |

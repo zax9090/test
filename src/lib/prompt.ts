@@ -1,10 +1,13 @@
 /**
  * The axis-extraction instruction.
  *
- * One text, two delivery routes: handed to `sampling/createMessage` when the
- * client supports sampling, and returned as tool-result text for the host model
- * to act on when it doesn't. Keeping a single source means the two paths can't
- * drift into producing differently-shaped axes.
+ * One text, two deliveries. Where the host implements sampling the server sends
+ * it through `sampling/createMessage`. Where it does not — which is every Claude
+ * surface today — the same instruction is carried in the tool description, and
+ * the host model produces the axes as tool arguments.
+ *
+ * Keeping a single source means the two routes cannot drift into producing
+ * differently-shaped axes.
  */
 
 import { describeLanguage } from "./locale.js";
@@ -19,7 +22,7 @@ export function clampSource(source: string | undefined): string | undefined {
   return trimmed.length > SOURCE_LIMIT ? trimmed.slice(0, SOURCE_LIMIT) : trimmed;
 }
 
-const SCHEMA = `interface Option {
+export const SCHEMA = `interface Option {
   value: string;
   label: string;
   emit: string;        // the sentence inserted into the prompt; include the reason
@@ -45,7 +48,7 @@ interface Unfolded {
   symptoms?: { id: string; label: string; emit: string }[];
 }`;
 
-export const TASK = `Find what this request leaves undecided.
+export const TASK = `Find what the request leaves undecided.
 
 List the things the user could still specify but hasn't, as axes with choices.
 If source material is given, fit the axes to what the material actually contains.
@@ -53,6 +56,8 @@ Do not cap the count artificially — pull every axis that genuinely matters.
 Mark the 3-4 that change the result most as \`core\`; everything else is \`extra\`.
 
 Rules for the values you write:
+- Write every label, option label, \`emit\` sentence and \`norm\` in the same
+  language the user wrote their request in.
 - \`emit\` is a full sentence that will be pasted into a prompt, and it carries its
   own reason. Not "black" but "The cat's coat is black, so it reads clearly
   against a light background."
@@ -69,15 +74,14 @@ export interface PromptInput {
   source?: string;
 }
 
-/** Build the full instruction, source included when present. */
+/** Build the sampling instruction, source included when present. */
 export function buildExtractionPrompt({ request, source }: PromptInput): string {
   const clamped = clampSource(source);
-  const language = describeLanguage(request);
 
   const parts = [
     TASK,
     "",
-    `Write every label, option label, \`emit\` sentence and \`norm\` in ${language}.`,
+    `The request is written in ${describeLanguage(request)} — match it.`,
     "",
     "Request:",
     request.trim(),
@@ -102,25 +106,4 @@ export function buildExtractionPrompt({ request, source }: PromptInput): string 
   );
 
   return parts.join("\n");
-}
-
-/**
- * The same instruction, addressed to the host model.
- *
- * Used when the client has no sampling capability — which, as of the 2026-01-26
- * apps extension, includes Claude. The host model reads this, produces the JSON,
- * and calls `unfold` again with it, at which point the widget renders. See
- * docs/stage0-conflicts.md (C1).
- */
-export function buildHostFallbackPrompt(input: PromptInput): string {
-  return [
-    buildExtractionPrompt(input),
-    "",
-    "---",
-    "",
-    "Then call `unfold` again with the identical `request` and `source` you were",
-    "given, plus `unfolded` set to the JSON string you just produced. That second",
-    "call renders the widget. Do not show the JSON to the user and do not answer",
-    "the request itself — the user decides from the widget first.",
-  ].join("\n");
 }

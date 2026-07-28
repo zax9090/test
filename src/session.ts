@@ -25,6 +25,7 @@ import {
 } from "agents/mcp";
 
 import { registerUnfold } from "./tools/unfold.js";
+import { registerWidgetResource } from "./resources/widget.js";
 import type { Env } from "./env.js";
 
 /** Route the MCP endpoint lives on, worker and object side alike. */
@@ -46,12 +47,27 @@ decide them instead of discovering them one correction at a time.
 Reach for \`unfold\` when a request is open-ended and you would otherwise guess.
 Leave it alone when the request is already specific — answer that directly.`;
 
+/**
+ * Build the server.
+ *
+ * Tools and resources are registered up front — they have to be, since the first
+ * registration installs the `tools/list` handler and that path throws once the
+ * server is connected. `unfold` then narrows itself in `oninitialized`, which is
+ * the earliest point the client's sampling capability is known.
+ */
 function buildServer(env: Env): McpServer {
   const server = new McpServer(SERVER_INFO, {
     instructions: INSTRUCTIONS,
     capabilities: { tools: {}, resources: {} },
   });
-  registerUnfold(server, env);
+
+  const unfold = registerUnfold(server, env);
+  registerWidgetResource(server);
+
+  server.server.oninitialized = () => {
+    unfold.onCapabilities(Boolean(server.server.getClientCapabilities()?.sampling));
+  };
+
   return server;
 }
 

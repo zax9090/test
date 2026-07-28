@@ -1,16 +1,16 @@
 /**
- * Manual end-to-end check of the `unfold` tool over real MCP.
+ * Manual end-to-end check of the MCP server over real MCP.
  *
  * Not part of `npm test` — it needs a server running:
  *
- *   npx wrangler dev --port 8788 --local
+ *   npm run build:widget && npx wrangler dev --port 8788 --local
  *   node scripts/smoke.mjs
  *
- * Covers the four routes that matter: a client without sampling gets the host
- * instruction, the second leg turns that JSON into axes, a sampling client
- * exercises the retry and fence-stripping, and a client whose sampling always
- * fails still ends up with axes rather than an empty widget.
+ * Checks that `unfold` takes the right shape for each kind of client, that both
+ * extraction routes end in axes, and that the widget resource is actually
+ * served at the URI the tool points at.
  */
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CreateMessageRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -28,27 +28,11 @@ const CANNED = JSON.stringify({
       type: "select",
       norm: "보통 단색이 인식률이 높습니다",
       options: [
-        { value: "black", label: "검정", emit: "털색은 검은색으로, 밝은 배경과 대비되게 한다.", common: true },
+        { value: "black", label: "검정", emit: "털색은 검은색으로 한다.", common: true },
         { value: "white", label: "흰색", emit: "털색은 흰색으로 한다." },
       ],
     },
-    {
-      id: "pose",
-      label: "자세",
-      group: "core",
-      type: "select",
-      options: [
-        { value: "lying", label: "누움", emit: "누워 있는 자세로 그린다." },
-        { value: "sitting", label: "앉음", emit: "앉아 있는 자세로 그린다." },
-      ],
-    },
-    {
-      // Deliberately malformed: no label. Must be dropped, not fatal.
-      id: "broken",
-      group: "extra",
-      type: "select",
-      options: [],
-    },
+    { id: "broken", group: "extra", type: "select", options: [] },
     {
       id: "size",
       label: "크기",
@@ -57,7 +41,6 @@ const CANNED = JSON.stringify({
       range: { unit: "px", min: 256, max: 2048, emitTemplate: "가로 {value}px로 만든다." },
     },
   ],
-  fixes: [{ label: "단색 배경", set: { bg: "plain" } }],
 });
 
 async function connect(caps, onSampling) {
@@ -67,58 +50,54 @@ async function connect(caps, onSampling) {
   return client;
 }
 
-function head(s, n = 240) {
-  return s.length > n ? s.slice(0, n) + " …" : s;
-}
+const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
 
-// ── 1. no sampling capability → host-fallback instruction ────────────────────
+// ── client without sampling: the model is asked to supply the axes ──────────
 {
   const client = await connect({});
-  const tools = await client.listTools();
-  console.log("[tools]", tools.tools.map((t) => t.name).join(", "));
-  console.log("[desc first line]", tools.tools[0].description.split("\n")[0]);
+  const { tools } = await client.listTools();
+  const unfold = tools.find((t) => t.name === "unfold");
 
-  const r = await client.callTool({
-    name: "unfold",
-    arguments: { request: "고양이 이미지 만들어줘" },
-  });
-  const text = r.content[0].text;
-  console.log("\n=== 1. NO SAMPLING → fallback instruction ===");
-  console.log("asks host to re-call:", /call `unfold` again/.test(text));
-  console.log("language pinned to Korean:", /in Korean/.test(text));
-  console.log(head(text, 200));
-  await client.close();
-}
+  console.log("=== no sampling ===");
+  check("tool is registered", Boolean(unfold));
+  check("declares a widget resource", unfold._meta?.ui?.resourceUri === "ui://unknown-unknowns/widget.html");
+  check("asks the model for `unfolded`", "unfolded" in (unfold.inputSchema.properties ?? {}));
+  check("carries the extraction instruction", /Find what the request leaves undecided/.test(unfold.description));
+  check("tells Claude when not to call it", /Do NOT call this/.test(unfold.description));
 
-// ── 2. second leg: host supplies the JSON ────────────────────────────────────
-{
-  const client = await connect({});
   const r = await client.callTool({
     name: "unfold",
     arguments: { request: "고양이 이미지 만들어줘", unfolded: CANNED },
   });
-  const parsed = JSON.parse(r.content[0].text);
-  console.log("\n=== 2. SECOND LEG (unfolded=JSON) ===");
-  console.log("axes:", parsed.axes.map((a) => `${a.label}(${a.group}/${a.type})`).join(", "));
-  console.log("malformed axis dropped:", !parsed.axes.some((a) => a.id === "broken"));
-  console.log("requestId:", r.structuredContent?.requestId?.slice(0, 8), "locale:", r.structuredContent?.locale);
+  const payload = r.structuredContent;
+  check("returns axes", payload?.unfolded?.axes?.length === 2);
+  check("drops the malformed axis", !payload.unfolded.axes.some((a) => a.id === "broken"));
+  check("detects the locale", payload?.locale === "ko");
+  check("mints a requestId", typeof payload?.requestId === "string");
+
+  // The resource the tool points at must exist and be MCP-Apps flavoured HTML.
+  const res = await client.readResource({ uri: "ui://unknown-unknowns/widget.html" });
+  const doc = res.contents[0];
+  check("widget resource is served", doc.text.startsWith("<!doctype html>"));
+  check("uses the apps mime type", doc.mimeType === "text/html;profile=mcp-app");
+  check("asks for clipboard-write", Boolean(doc._meta?.ui?.permissions?.clipboardWrite));
+  check("loads nothing from the network", !/https?:\/\/[^"'\s]+\.(js|css)/.test(doc.text));
+  console.log(`  widget: ${(doc.text.length / 1024).toFixed(0)}KB`);
+
   await client.close();
 }
 
-// ── 3. sampling capability → server borrows the host model ───────────────────
+// ── client with sampling: the server extracts through the host model ────────
 {
-  let sampled = 0;
+  let calls = 0;
   const client = await connect({ sampling: {} }, async (req) => {
-    sampled++;
+    calls++;
     const sent = req.params.messages[0].content.text;
-    if (sampled === 1) {
-      console.log("\n=== 3. SAMPLING ===");
-      console.log("prompt carries source:", /Source material:/.test(sent));
-      console.log("prompt bans fences:", /No code fence/.test(sent));
-      // First reply is garbage, to exercise the single retry.
-      return { model: "fake", role: "assistant", content: { type: "text", text: "sorry, no." } };
+    if (calls === 1) {
+      check("prompt carries the source", /Source material:/.test(sent));
+      check("prompt pins the language", /written in Korean/.test(sent));
+      return { model: "fake", role: "assistant", content: { type: "text", text: "nope" } };
     }
-    // Second reply wrapped in a fence, to exercise fence stripping.
     return {
       model: "fake",
       role: "assistant",
@@ -126,17 +105,23 @@ function head(s, n = 240) {
     };
   });
 
+  const { tools } = await client.listTools();
+  const unfold = tools.find((t) => t.name === "unfold");
+
+  console.log("\n=== sampling ===");
+  check("does not ask the model for axes", !("unfolded" in (unfold.inputSchema.properties ?? {})));
+  check("keeps the description short", !/Find what the request leaves undecided/.test(unfold.description));
+
   const r = await client.callTool({
     name: "unfold",
     arguments: { request: "고양이 이미지 만들어줘", source: "샴고양이는 눈이 파랗다." },
   });
-  const parsed = JSON.parse(r.content[0].text);
-  console.log("sampling calls (1 = retry used):", sampled);
-  console.log("axes after retry+fence-strip:", parsed.axes.map((a) => a.label).join(", "));
+  check("retries once on unparseable output", calls === 2);
+  check("strips the code fence", r.structuredContent?.unfolded?.axes?.length === 2);
   await client.close();
 }
 
-// ── 4. sampling that always fails → generic fallback axes, never empty ───────
+// ── sampling that always fails: generic axes rather than an empty widget ────
 {
   const client = await connect({ sampling: {} }, async () => {
     throw new Error("host refused");
@@ -145,12 +130,12 @@ function head(s, n = 240) {
     name: "unfold",
     arguments: { request: "Write a launch announcement" },
   });
-  const parsed = JSON.parse(r.content[0].text);
-  console.log("\n=== 4. SAMPLING ALWAYS FAILS → generic fallback ===");
-  console.log("axes:", parsed.axes.map((a) => a.label).join(", "));
-  console.log("never empty:", parsed.axes.length > 0);
-  console.log("english request → english axes:", parsed.axes[0].label === "Purpose");
+  const axes = r.structuredContent?.unfolded?.axes ?? [];
+
+  console.log("\n=== sampling always fails ===");
+  check("still produces axes", axes.length > 0);
+  check("in the request's language", axes[0]?.label === "Purpose");
   await client.close();
 }
 
-console.log("\nOK");
+console.log("\ndone");

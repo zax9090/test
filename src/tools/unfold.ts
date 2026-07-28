@@ -1,27 +1,34 @@
 /**
  * `unfold` — the tool this project is built around.
  *
- * Takes one request and lays out what it leaves undecided.
+ * Takes one request and lays out what it leaves undecided, in a widget.
  *
- * Two routes reach the same place:
+ * The tool is registered in one of two shapes, chosen from the client's
+ * capabilities at initialize time:
  *
- *   sampling      unfold(request) -> sampling/createMessage -> axes
- *   host fallback unfold(request) -> instruction text
- *                 unfold(request, unfolded=JSON) -> axes
+ *   host has sampling  unfold(request, source?) — the server extracts the axes
+ *                      through the host's model.
+ *   host has none      unfold(request, source?, unfolded) — the extraction
+ *                      instruction rides in the tool description and the host
+ *                      model supplies the axes as an argument.
  *
- * The fallback exists because the host may not implement sampling; on Claude it
- * is the only route that runs. See docs/stage0-conflicts.md (C1).
+ * Either way it is exactly one call. That matters: a tool carrying
+ * `_meta.ui.resourceUri` renders its widget on *every* invocation, and each call
+ * mounts a fresh iframe that stays in the transcript. The brief's two-call
+ * fallback would therefore leave an empty widget above the real one. See
+ * docs/stage0-conflicts.md (C7).
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 
-import { buildHostFallbackPrompt } from "../lib/prompt.js";
-import { extractViaSampling, supportsSampling } from "../lib/sampling.js";
+import { SCHEMA, TASK, clampSource } from "../lib/prompt.js";
+import { extractViaSampling } from "../lib/sampling.js";
 import { fallbackUnfolded, parseUnfolded, type Unfolded } from "../lib/schema.js";
-import { clampSource } from "../lib/prompt.js";
 import { detectLocale } from "../lib/locale.js";
-import { newRequestId, requestStore, type StoreEnv } from "../lib/store.js";
+import { newRequestId, requestStore } from "../lib/store.js";
+import { WIDGET_URI } from "../resources/widget.js";
 import type { Env } from "../env.js";
 
 /**
@@ -30,7 +37,7 @@ import type { Env } from "../env.js";
  * The refusal clause is deliberately first and concrete — an unfolder that fires
  * on already-specific requests is just latency.
  */
-const DESCRIPTION = `Lay out what a request leaves undecided, as selectable axes in a widget.
+const WHEN = `Lay out what a request leaves undecided, as selectable axes in a widget.
 
 Use this when a request is open-ended enough that you would otherwise guess at
 details the user has an opinion about — an image, a piece of writing, a design, a
@@ -44,7 +51,20 @@ than scoped. A concrete request answered with a widget is a worse answer.
 Call it with the user's request verbatim. Pass \`source\` when the task is about a
 document, transcript or dataset the user provided.`;
 
-const inputSchema = {
+/** Description for hosts that cannot sample: the model does the extraction itself. */
+const WHEN_MODEL_EXTRACTS = `${WHEN}
+
+You must also supply \`unfolded\` — a JSON string you write yourself, following
+the instructions below. Do not show it to the user, and do not answer the request
+itself; the user decides from the widget first.
+
+${TASK}
+
+\`unfolded\` is a JSON string of this shape:
+
+${SCHEMA}`;
+
+const baseInput = {
   request: z
     .string()
     .min(1)
@@ -53,90 +73,115 @@ const inputSchema = {
     .string()
     .optional()
     .describe("Material the task is about — document, transcript, data. Optional."),
-  unfolded: z
-    .string()
-    .optional()
-    .describe(
-      "Only for the second call on the host-fallback route: the JSON you produced " +
-        "from the instructions returned by the first call. Never set this on a first call.",
-    ),
 };
 
-export interface UnfoldResult {
+export interface UnfoldPayload {
   unfolded: Unfolded;
   requestId: string;
   locale: "ko" | "en";
 }
 
 /**
- * Persist the material `preview` will need, then hand back the result payload.
+ * Persist what `preview` will need, then build the result payload.
  *
  * Storage failures are swallowed: losing the ability to generate previews later
  * is not a reason to withhold the axes now.
  */
 async function finalize(
-  env: StoreEnv,
+  env: Env,
   unfolded: Unfolded,
   request: string,
   source: string | undefined,
-): Promise<UnfoldResult> {
+): Promise<UnfoldPayload> {
   const requestId = newRequestId();
   try {
     await requestStore(env, requestId).put({ request, source, axes: unfolded.axes });
   } catch {
-    // preview will fall back quietly (brief: no error banners).
+    // preview falls back quietly (brief: no error banners).
   }
   return { unfolded, requestId, locale: detectLocale(request) };
 }
 
-function asToolResult(payload: UnfoldResult) {
-  // Stage 1 returns the axes as text. Stage 3 attaches the widget resource and
-  // moves this payload into structured content.
+function toolResult(payload: UnfoldPayload) {
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(payload.unfolded, null, 2) }],
+    // Text keeps the tool useful on hosts with no MCP Apps support at all.
+    content: [{ type: "text" as const, text: JSON.stringify(payload.unfolded) }],
     structuredContent: payload as unknown as Record<string, unknown>,
   };
 }
 
-export function registerUnfold(server: McpServer, env: Env): void {
-  server.registerTool(
+export interface UnfoldHandle {
+  /**
+   * Narrow the tool once the client's capabilities are known.
+   *
+   * Called from `oninitialized`. Capabilities are not knowable at registration
+   * time, and the tool cannot simply be registered later: the first
+   * `registerTool` installs the `tools/list` handler via `registerCapabilities`,
+   * which throws once the server is connected to a transport. So the tool is
+   * registered up front in its widest shape and narrowed here.
+   */
+  onCapabilities(sampling: boolean): void;
+}
+
+interface UnfoldArgs {
+  request: string;
+  source?: string;
+  unfolded?: string;
+}
+
+async function handle(server: McpServer, env: Env, args: UnfoldArgs) {
+  const { request, source, unfolded: supplied } = args;
+  const cleanSource = clampSource(source);
+
+  // Model-supplied axes win when present — on a sampling host that is a free
+  // shortcut, and on a non-sampling host it is the only route.
+  if (supplied) {
+    const parsed = parseUnfolded(supplied, request) ?? fallbackUnfolded(request);
+    return toolResult(await finalize(env, parsed, request, cleanSource));
+  }
+
+  const { unfolded } = await extractViaSampling(server.server, {
+    request,
+    source: cleanSource,
+  });
+  return toolResult(await finalize(env, unfolded, request, cleanSource));
+}
+
+const common = {
+  title: "Unfold the undecided",
+  annotations: {
+    title: "Unfold the undecided",
+    readOnlyHint: true,
+    openWorldHint: false,
+  },
+  _meta: { ui: { resourceUri: WIDGET_URI } },
+} as const;
+
+const modelExtractsInput = {
+  ...baseInput,
+  unfolded: z
+    .string()
+    .min(1)
+    .describe("The axis JSON you produced, as described in the tool description."),
+};
+
+export function registerUnfold(server: McpServer, env: Env): UnfoldHandle {
+  // Registered in the shape that works on any client, so a host that never
+  // reports sampling — every Claude surface today — is correct from the start
+  // and nothing depends on the narrowing below actually running.
+  const tool = registerAppTool(
+    server,
     "unfold",
-    {
-      title: "Unfold the undecided",
-      description: DESCRIPTION,
-      inputSchema,
-      annotations: {
-        title: "Unfold the undecided",
-        readOnlyHint: true,
-        openWorldHint: false,
-      },
-    },
-    async ({ request, source, unfolded }) => {
-      const cleanSource = clampSource(source);
-
-      // Second leg of the host-fallback route: the model has produced the JSON.
-      if (unfolded) {
-        const parsed = parseUnfolded(unfolded, request) ?? fallbackUnfolded(request);
-        return asToolResult(await finalize(env, parsed, request, cleanSource));
-      }
-
-      if (supportsSampling(server.server)) {
-        const { unfolded: extracted } = await extractViaSampling(server.server, {
-          request,
-          source: cleanSource,
-        });
-        return asToolResult(await finalize(env, extracted, request, cleanSource));
-      }
-
-      // No sampling on this client — hand the instruction to the host model.
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: buildHostFallbackPrompt({ request, source: cleanSource }),
-          },
-        ],
-      };
-    },
+    { ...common, description: WHEN_MODEL_EXTRACTS, inputSchema: modelExtractsInput },
+    async (args) => handle(server, env, args),
   );
+
+  return {
+    onCapabilities(sampling: boolean) {
+      if (!sampling) return;
+      // The server can do the extraction itself, so stop asking the model for it
+      // and drop the instruction from the description.
+      tool.update({ description: WHEN, paramsSchema: baseInput });
+    },
+  };
 }
