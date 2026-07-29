@@ -1,0 +1,26 @@
+{
+  // Browser half of the codebase. DOM types instead of the Workers globals; the
+  // two type sets disagree about `navigator`, `document` and event targets, so
+  // they cannot share one project.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["react", "react-dom"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  // The shared pure modules are plain TypeScript with no platform APIs, so they
+  // typecheck cleanly under both projects.
+  "include": ["**/*", "../lib/assemble.ts", "../lib/schema.ts", "../lib/locale.ts"]
+}

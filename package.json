@@ -1,0 +1,40 @@
+{
+  "name": "unknown-unknowns",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Unfold the choices a request leaves unmade — an MCP app.",
+  "scripts": {
+    "dev": "npm run build:widget && wrangler dev",
+    "build:widget": "node scripts/build-widget.mjs",
+    "build:harness": "node scripts/build-widget-harness.mjs",
+    "deploy": "npm run build:widget && wrangler deploy",
+    "typecheck": "npm run build:widget && tsc --noEmit && tsc --noEmit -p src/widget",
+    "test": "vitest run",
+    "test:widget": "npm run build:widget && npm run build:harness && playwright test",
+    "test:all": "npm run format:check && npm run typecheck && npm run test && npm run test:widget",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "agents": "^0.20.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260728.1",
+    "@playwright/test": "^1.62.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "esbuild": "^0.28.1",
+    "http-server": "^14.1.1",
+    "preact": "^10.29.7",
+    "prettier": "^3.9.6",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.114.0"
+  }
+}

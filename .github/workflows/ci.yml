@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run format:check
+      # Builds the widget first, then typechecks the Worker and the browser
+      # halves separately — they need conflicting global type sets.
+      - run: npm run typecheck
+      - run: npm test
+
+      # The browser suite drives the built widget through the real ui/
+      # handshake, so it needs a browser and the harness bundle.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:widget

@@ -1,0 +1,18 @@
+name = "unknown-unknowns"
+main = "src/server.ts"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Owns one MCP session each. The server object has to outlive a single request
+# so a sampling reply, which arrives on its own POST, can resolve the request
+# that is waiting for it.
+[[durable_objects.bindings]]
+name = "MCP_SESSION"
+class_name = "McpSession"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["McpSession"]
+
+[observability]
+enabled = true
