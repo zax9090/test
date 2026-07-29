@@ -59,13 +59,26 @@ async function connect(caps, onSampling) {
 
 const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
 
+// ── the address a person opens in a browser ────────────────────────────────
+{
+  console.log("=== root ===");
+  const res = await fetch(URL_.origin);
+  const html = await res.text();
+  check("serves a page rather than a 404", res.status === 200);
+  // The whole point of the page: it hands over the URL with the /mcp suffix.
+  check("hands over the connector URL", html.includes(`${URL_.origin}/mcp`));
+
+  const health = await fetch(`${URL_.origin}/health`);
+  check("health says ok", (await health.text()).trim() === "ok");
+}
+
 // ── client without sampling: the model is asked to supply the axes ──────────
 {
   const client = await connect({});
   const { tools } = await client.listTools();
   const unfold = tools.find((t) => t.name === "unfold");
 
-  console.log("=== no sampling ===");
+  console.log("\n=== no sampling ===");
   check("tool is registered", Boolean(unfold));
   check(
     "declares a widget resource",
