@@ -16,6 +16,8 @@ import { Icon } from "./icons.js";
 interface AxisListProps {
   resolved: ResolvedAxis[];
   onChange: (axisId: string, value: Selection) => void;
+  onPreview?: (axisId: string) => void;
+  previewing: string | null;
   freeform: string;
   onFreeform: (value: string) => void;
   source: string;
@@ -28,6 +30,8 @@ interface AxisListProps {
 export function AxisList({
   resolved,
   onChange,
+  onPreview,
+  previewing,
   freeform,
   onFreeform,
   source,
@@ -47,6 +51,8 @@ export function AxisList({
         status={r.status}
         values={r.values}
         onChange={onChange}
+        {...(onPreview ? { onPreview } : {})}
+        previewing={previewing === r.axis.id}
         t={t}
       />
     ));

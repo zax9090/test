@@ -133,8 +133,10 @@ async function handle(server: McpServer, env: Env, args: UnfoldArgs) {
   const { request, source, unfolded: supplied } = args;
   const cleanSource = clampSource(source);
 
-  // Model-supplied axes win when present — on a sampling host that is a free
-  // shortcut, and on a non-sampling host it is the only route.
+  // On a host without sampling this is the only route. On one with sampling the
+  // narrowed schema has no `unfolded` field, so the SDK strips it before the
+  // handler sees it and extraction always runs below — the branch is simply
+  // unreachable there.
   if (supplied) {
     const parsed = parseUnfolded(supplied, request) ?? fallbackUnfolded(request);
     return toolResult(await finalize(env, parsed, request, cleanSource));

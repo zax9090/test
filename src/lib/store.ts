@@ -14,6 +14,8 @@
 
 import { DurableObject } from "cloudflare:workers";
 
+import type { Axis } from "./schema.js";
+
 /** Retention window from the brief. */
 export const TTL_MS = 30 * 60 * 1000;
 
@@ -22,8 +24,14 @@ const KEY = "payload";
 export interface StoredRequest {
   request: string;
   source?: string;
-  /** Axis metadata `preview` needs to generate samples for one axis. */
-  axes?: unknown;
+  /**
+   * The axes `preview` needs to know a direction's labels.
+   *
+   * Concretely typed rather than `unknown`: these values cross a Durable Object
+   * RPC boundary, and the serializable-type mapping collapses `unknown` to
+   * `never` at the call site.
+   */
+  axes?: Axis[];
   expiresAt: number;
 }
 

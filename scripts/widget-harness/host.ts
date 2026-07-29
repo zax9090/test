@@ -13,13 +13,23 @@ declare global {
   interface Window {
     __harness: {
       sent: Array<{ role: string; text: string }>;
+      toolCalls: Array<{ name: string; arguments: unknown }>;
       ready: boolean;
     };
     __payload: unknown;
+    /** Canned `preview` reply. `null` makes the call fail, for the silent path. */
+    __previewReply: Record<string, string> | null;
+    /** Held open until released, to observe what the widget shows mid-flight. */
+    __holdPreview: boolean;
   }
 }
 
-window.__harness = { sent: [], ready: false };
+window.__harness = { sent: [], toolCalls: [], ready: false };
+
+// Defaults only. A test's init script runs before this file, so overwriting
+// unconditionally would wipe whatever it set up.
+if (!("__previewReply" in window)) window.__previewReply = null;
+if (!("__holdPreview" in window)) window.__holdPreview = false;
 
 const iframe = document.createElement("iframe");
 iframe.id = "app";
@@ -53,6 +63,28 @@ iframe.addEventListener("load", async () => {
       text: content.map((c) => ("text" in c ? c.text : "")).join(""),
     });
     return {};
+  };
+
+  // Stands in for the MCP server the host would proxy `callServerTool` to.
+  bridge.oncalltool = async ({ name, arguments: args }) => {
+    window.__harness.toolCalls.push({ name, arguments: args });
+
+    while (window.__holdPreview) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    if (name !== "preview" || window.__previewReply === null) {
+      throw new Error("no preview available");
+    }
+
+    const payload = {
+      axisId: (args as { axisId: string }).axisId,
+      samples: window.__previewReply,
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(payload) }],
+      structuredContent: payload,
+    };
   };
 
   bridge.oninitialized = async () => {

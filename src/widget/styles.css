@@ -263,6 +263,83 @@
   opacity: 0.55;
 }
 
+/* ── sample cards ─────────────────────────────────────────────────────── */
+
+/*
+ * Directions you have to read rather than name. Cards keep their place while a
+ * rewrite is in flight — no skeleton, no spinner, nothing blanks.
+ */
+.uu-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.uu-card {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid var(--color-border-primary, rgba(128, 128, 128, 0.32));
+  border-radius: var(--border-radius-sm, 6px);
+}
+
+.uu-card:hover {
+  background: var(--color-background-secondary, rgba(128, 128, 128, 0.07));
+}
+
+.uu-card.is-on {
+  border-color: currentColor;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.uu-card-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: var(--font-weight-medium, 500);
+}
+
+.uu-card-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--font-text-xs-size, 11.5px);
+  line-height: 1.5;
+  color: var(--color-text-secondary, inherit);
+  opacity: 0.85;
+}
+
+.uu-refresh {
+  appearance: none;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: var(--font-text-xs-size, 11.5px);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 2px;
+  color: var(--color-text-secondary, inherit);
+  opacity: 0.7;
+}
+
+.uu-refresh:hover:not(:disabled) {
+  opacity: 1;
+}
+
+.uu-refresh:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 /* ── inputs ───────────────────────────────────────────────────────────── */
 
 .uu-input {

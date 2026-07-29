@@ -121,6 +121,97 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
   await client.close();
 }
 
+// ── preview ────────────────────────────────────────────────────────────────
+{
+  const SAMPLE_AXES = JSON.stringify({
+    title: "요약",
+    intent: "회의록을 요약해줘",
+    axes: [
+      {
+        id: "voice",
+        label: "문체",
+        group: "core",
+        type: "sample",
+        options: [
+          { value: "plain", label: "담백하게", emit: "담백한 문체로 쓴다." },
+          { value: "warm", label: "부드럽게", emit: "부드러운 문체로 쓴다." },
+        ],
+      },
+    ],
+  });
+
+  // One sampling client serving both prompts: extraction first, then the
+  // preview. On a sampling host `unfold` has no `unfolded` field — the SDK
+  // strips it — so the axes have to come through sampling like they would in
+  // real use.
+  let asked = "";
+  const client = await connect({ sampling: {} }, async (req) => {
+    const text = req.params.messages[0].content.text;
+    const isPreview = /Write a short sample for each direction/.test(text);
+    if (isPreview) asked = text;
+
+    return {
+      model: "fake",
+      role: "assistant",
+      content: {
+        type: "text",
+        text: isPreview
+          ? JSON.stringify({
+              samples: { plain: "예산 동결.", warm: "예산은 그대로 갑니다.", ghost: "무시될 것" },
+            })
+          : SAMPLE_AXES,
+      },
+    };
+  });
+
+  console.log("\n=== preview ===");
+  const { tools } = await client.listTools();
+  const preview = tools.find((t) => t.name === "preview");
+  // The server still lists it; the spec puts the filtering on the host — "Host
+  // MUST NOT include tools in the agent's tool list when their visibility does
+  // not include model". So what we can assert here is the declaration.
+  check("declared app-only", JSON.stringify(preview?._meta?.ui?.visibility) === '["app"]');
+
+  const unfolded = await client.callTool({
+    name: "unfold",
+    arguments: { request: "회의록을 요약해줘", source: "예산 동결 결정." },
+  });
+  check("stored the sample axis", unfolded.structuredContent.unfolded.axes[0]?.type === "sample");
+  const requestId = unfolded.structuredContent.requestId;
+
+  const r = await client.callTool({
+    name: "preview",
+    arguments: { requestId, axisId: "voice", source: "예산은 3분기까지 동결." },
+  });
+  const samples = r.structuredContent?.samples ?? {};
+  check("writes a sample per direction", samples.plain === "예산 동결." && samples.warm === "예산은 그대로 갑니다.");
+  check("drops directions that do not exist", !("ghost" in samples));
+  check("uses the source the widget passed", /3분기까지 동결/.test(asked));
+  check("names the directions to the model", /plain: 담백하게/.test(asked));
+
+  const stale = await client.callTool({
+    name: "preview",
+    arguments: { requestId: "no-such-request", axisId: "voice" },
+  });
+  check("expired request returns nothing, quietly", Object.keys(stale.structuredContent.samples).length === 0);
+  check("and is not an error", stale.isError !== true);
+
+  await client.close();
+}
+
+// ── preview without sampling: nothing, and no error ────────────────────────
+{
+  const client = await connect({});
+  const r = await client.callTool({
+    name: "preview",
+    arguments: { requestId: "anything", axisId: "voice" },
+  });
+  console.log("\n=== preview, no sampling ===");
+  check("returns no samples", Object.keys(r.structuredContent.samples).length === 0);
+  check("still not an error", r.isError !== true);
+  await client.close();
+}
+
 // ── sampling that always fails: generic axes rather than an empty widget ────
 {
   const client = await connect({ sampling: {} }, async () => {

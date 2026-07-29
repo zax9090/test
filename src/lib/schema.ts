@@ -20,6 +20,14 @@ export interface Option {
   emit: string;
   /** Marks a usual value with a small dot. Never auto-selected. */
   common?: boolean;
+  /**
+   * Two or three lines showing what this direction actually reads like.
+   *
+   * Only meaningful on a `sample` axis, where a label alone does not convey the
+   * difference. Supplied up front by the extracting model, and replaced by
+   * fresher text when `preview` runs against the host's model.
+   */
+  preview?: string;
 }
 
 export interface AxisRange {
@@ -117,7 +125,23 @@ function parseOption(raw: unknown, index: number): Option | undefined {
 
   const option: Option = { value, label, emit };
   if (o.common === true) option.common = true;
+
+  const preview = str(o.preview);
+  if (preview) option.preview = preview;
+
   return option;
+}
+
+/** Replace an axis's per-option preview text, leaving everything else alone. */
+export function withPreviews(axis: Axis, samples: Record<string, string>): Axis {
+  if (!axis.options) return axis;
+  return {
+    ...axis,
+    options: axis.options.map((option) => {
+      const text = samples[option.value]?.trim();
+      return text ? { ...option, preview: text } : option;
+    }),
+  };
 }
 
 function parseAxis(raw: unknown, index: number): Axis | undefined {

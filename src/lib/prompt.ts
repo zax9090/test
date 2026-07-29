@@ -27,6 +27,7 @@ export const SCHEMA = `interface Option {
   label: string;
   emit: string;        // the sentence inserted into the prompt; include the reason
   common?: boolean;    // usual value; shown as a small dot, never auto-selected
+  preview?: string;    // sample axes only: 2-3 lines showing what this reads like
 }
 
 interface Axis {
@@ -66,7 +67,10 @@ Rules for the values you write:
 - \`common\` marks a conventional value. It is a dot on the chip, not a default.
 - Use \`range\` for anything continuous (size, count, duration) and give an
   \`emitTemplate\` containing \`{value}\`.
-- Use \`sample\` for axes best judged by seeing a sample rather than reading a label.
+- Use \`sample\` for axes best judged by seeing a sample rather than reading a
+  label — voice, register, opening line. On those, give every option a
+  \`preview\`: 2-3 lines written in that direction, using the source material if
+  there is any, so the difference can be read rather than imagined.
 - \`default\` only where a value genuinely must exist for the task to proceed.`;
 
 export interface PromptInput {
@@ -106,4 +110,40 @@ export function buildExtractionPrompt({ request, source }: PromptInput): string 
   );
 
   return parts.join("\n");
+}
+
+/**
+ * Ask for fresh sample text for one axis.
+ *
+ * Used by `preview`, which only ever runs from a button press. Sampling puts an
+ * approval prompt in front of the user on hosts that implement it, so firing
+ * this automatically would mean a dialog every time a widget appeared.
+ */
+export function buildPreviewPrompt(
+  { request, source }: PromptInput,
+  axisLabel: string,
+  directions: Array<{ value: string; label: string }>,
+): string {
+  const clamped = clampSource(source);
+
+  return [
+    "Write a short sample for each direction of one axis, so the user can read",
+    "the difference instead of imagining it.",
+    "",
+    `Axis: ${axisLabel}`,
+    "Directions:",
+    ...directions.map((d) => `- ${d.value}: ${d.label}`),
+    "",
+    "Request:",
+    request.trim(),
+    ...(clamped ? ["", "Source material:", clamped] : []),
+    "",
+    "Two or three lines per direction, in the language of the request. Ground",
+    "them in the source material when there is any — this should show what the",
+    "direction does to *this* material, not describe the direction in general.",
+    "",
+    "Reply with JSON only, no code fence, no preamble:",
+    "",
+    '{ "samples": { "<direction value>": "<2-3 lines>" } }',
+  ].join("\n");
 }

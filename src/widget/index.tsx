@@ -14,7 +14,7 @@ import { createRoot } from "react-dom/client";
 import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react-with-deps";
 
 import { assemble, resolveAxes, type Selection, type State } from "../lib/assemble.js";
-import type { Fix, Unfolded } from "../lib/schema.js";
+import { withPreviews, type Fix, type Unfolded } from "../lib/schema.js";
 import type { Locale } from "../lib/locale.js";
 import { strings } from "./i18n.js";
 import { AxisList } from "./AxisList.js";
@@ -100,6 +100,7 @@ function App() {
   const [copied, setCopied] = useState(false);
   // Folded by default; the header is what shows until it is opened.
   const [mapOpen, setMapOpen] = useState(false);
+  const [previewing, setPreviewing] = useState<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const width = useWidth(rootRef);
@@ -143,6 +144,52 @@ function App() {
   const applyFix = useCallback((fix: Fix) => {
     setSelections((prev) => ({ ...prev, ...fix.set }));
   }, []);
+
+  /**
+   * Rewrite one axis's samples from the current material.
+   *
+   * Only ever reached from the card's own button. The existing cards are left
+   * untouched until new text arrives, so nothing blanks out mid-flight, and a
+   * failure returns no samples and changes nothing — quietly, per the brief.
+   */
+  const runPreview = useCallback(
+    async (axisId: string) => {
+      if (!app || !payload?.requestId || previewing) return;
+      setPreviewing(axisId);
+
+      try {
+        const result = await app.callServerTool({
+          name: "preview",
+          arguments: { requestId: payload.requestId, axisId, source },
+        });
+
+        const structured = result.structuredContent as
+          | { axisId: string; samples: Record<string, string> }
+          | undefined;
+        const samples = structured?.samples ?? {};
+        if (Object.keys(samples).length === 0) return;
+
+        setPayload((prev) =>
+          prev
+            ? {
+                ...prev,
+                unfolded: {
+                  ...prev.unfolded,
+                  axes: prev.unfolded.axes.map((a) =>
+                    a.id === axisId ? withPreviews(a, samples) : a,
+                  ),
+                },
+              }
+            : prev,
+        );
+      } catch {
+        // Silent — the cards already on screen stay as they are.
+      } finally {
+        setPreviewing(null);
+      }
+    },
+    [app, payload?.requestId, previewing, source],
+  );
 
   const handleCopy = useCallback(async () => {
     const ok = await copyText(text);
@@ -241,6 +288,8 @@ function App() {
         <AxisList
           resolved={resolved}
           onChange={setAxis}
+          {...(app && payload.requestId ? { onPreview: runPreview } : {})}
+          previewing={previewing}
           freeform={freeform}
           onFreeform={setFreeform}
           source={source}

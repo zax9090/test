@@ -25,6 +25,7 @@ import {
 } from "agents/mcp";
 
 import { registerUnfold } from "./tools/unfold.js";
+import { registerPreview } from "./tools/preview.js";
 import { registerWidgetResource } from "./resources/widget.js";
 import type { Env } from "./env.js";
 
@@ -62,6 +63,7 @@ function buildServer(env: Env): McpServer {
   });
 
   const unfold = registerUnfold(server, env);
+  registerPreview(server, env);
   registerWidgetResource(server);
 
   server.server.oninitialized = () => {

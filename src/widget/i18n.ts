@@ -27,6 +27,8 @@ export interface Strings {
   send: string;
   chars: (n: number) => string;
   clear: string;
+  preview: string;
+  previewing: string;
   outOfRange: (min: string, max: string) => string;
 }
 
@@ -47,6 +49,8 @@ const ko: Strings = {
   send: "대화로 보내기",
   chars: (n) => `${n}자`,
   clear: "해제",
+  preview: "미리보기",
+  previewing: "쓰는 중",
   outOfRange: (min, max) => `보통 ${min}~${max} 범위입니다`,
 };
 
@@ -67,6 +71,8 @@ const en: Strings = {
   send: "Send to chat",
   chars: (n) => `${n} chars`,
   clear: "Clear",
+  preview: "Preview",
+  previewing: "Writing",
   outOfRange: (min, max) => `Usually between ${min} and ${max}`,
 };
 

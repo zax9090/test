@@ -14,12 +14,16 @@ import type { Axis } from "../lib/schema.js";
 import type { AxisStatus, Selection } from "../lib/assemble.js";
 import type { Strings } from "./i18n.js";
 import { Icon, STATUS_ICON } from "./icons.js";
+import { SampleCards } from "./SampleCards.js";
 
 interface AxisRowProps {
   axis: Axis;
   status: AxisStatus;
   values: string[];
   onChange: (axisId: string, value: Selection) => void;
+  /** Absent when the host cannot regenerate samples; the button is then hidden. */
+  onPreview?: (axisId: string) => void;
+  previewing?: boolean;
   t: Strings;
 }
 
@@ -98,7 +102,15 @@ function RangeInput({
   );
 }
 
-export function AxisRow({ axis, status, values, onChange, t }: AxisRowProps) {
+export function AxisRow({
+  axis,
+  status,
+  values,
+  onChange,
+  onPreview,
+  previewing = false,
+  t,
+}: AxisRowProps) {
   const selected = new Set(values);
 
   const toggleSingle = (value: string) => {
@@ -125,6 +137,15 @@ export function AxisRow({ axis, status, values, onChange, t }: AxisRowProps) {
             axis={axis}
             value={values[0]}
             onChange={(v) => onChange(axis.id, v)}
+            t={t}
+          />
+        ) : axis.type === "sample" ? (
+          <SampleCards
+            axis={axis}
+            selected={selected}
+            onPick={(value) => toggleSingle(value)}
+            {...(onPreview ? { onRefresh: () => onPreview(axis.id) } : {})}
+            refreshing={previewing}
             t={t}
           />
         ) : (

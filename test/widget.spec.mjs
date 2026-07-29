@@ -374,6 +374,138 @@ test("no map at all below the narrow threshold", async ({ page }) => {
   await expect(frame.locator(".uu-header-btn")).toBeVisible();
 });
 
+// ── sample axes and preview ────────────────────────────────────────────────
+
+const SAMPLE_PAYLOAD = {
+  content: [{ type: "text", text: "{}" }],
+  structuredContent: {
+    locale: "ko",
+    requestId: "req-1",
+    unfolded: {
+      title: "요약",
+      intent: "회의록을 요약해줘",
+      axes: [
+        {
+          id: "voice",
+          label: "문체",
+          group: "core",
+          type: "sample",
+          options: [
+            {
+              value: "plain",
+              label: "담백하게",
+              emit: "담백한 문체로 쓴다.",
+              preview: "예산은 3분기까지 동결된다.\n채용은 두 자리만 유지한다.",
+            },
+            {
+              value: "warm",
+              label: "부드럽게",
+              emit: "부드러운 문체로 쓴다.",
+              preview: "예산은 당분간 그대로 가기로 했습니다.\n채용은 두 자리만 열어두려 합니다.",
+            },
+            { value: "terse", label: "아주 짧게", emit: "아주 짧게 쓴다." },
+          ],
+        },
+      ],
+    },
+  },
+};
+
+async function openSamples(page, { reply = null, hold = false } = {}) {
+  await page.addInitScript(
+    ({ r, h }) => {
+      window.__previewReply = r;
+      window.__holdPreview = h;
+    },
+    { r: reply, h: hold },
+  );
+  return open(page, SAMPLE_PAYLOAD);
+}
+
+test("a sample axis shows each direction as readable text, not a label", async ({ page }) => {
+  const frame = await openSamples(page);
+
+  await expect(frame.locator(".uu-card")).toHaveCount(3);
+  await expect(frame.locator(".uu-card").first()).toContainText("예산은 3분기까지 동결된다.");
+  // A direction with no sample yet is still offered — the card is just lighter.
+  await expect(frame.locator(".uu-card").nth(2)).toContainText("아주 짧게");
+});
+
+test("picking a card decides the axis", async ({ page }) => {
+  const frame = await openSamples(page);
+
+  await frame.locator(".uu-card", { hasText: "담백하게" }).click();
+  await expect(prompt(frame)).toContainText("담백한 문체로 쓴다.");
+  await expect(frame.locator(".uu-card.is-on")).toHaveCount(1);
+});
+
+test("preview only runs when its button is pressed", async ({ page }) => {
+  const frame = await openSamples(page, { reply: { plain: "새로 쓴 샘플." } });
+
+  // Nothing fired on render, which is the point — sampling asks for approval.
+  await expect
+    .poll(() => page.evaluate(() => window.__harness.toolCalls.length))
+    .toBe(0);
+
+  await frame.locator(".uu-refresh").click();
+  await expect.poll(() => page.evaluate(() => window.__harness.toolCalls.length)).toBe(1);
+
+  const call = await page.evaluate(() => window.__harness.toolCalls[0]);
+  expect(call.name).toBe("preview");
+  expect(call.arguments.requestId).toBe("req-1");
+  expect(call.arguments.axisId).toBe("voice");
+});
+
+test("fresh samples replace the old ones", async ({ page }) => {
+  const frame = await openSamples(page, {
+    reply: { plain: "새로 쓴 담백한 샘플.", warm: "새로 쓴 부드러운 샘플." },
+  });
+
+  await frame.locator(".uu-refresh").click();
+  await expect(frame.locator(".uu-card").first()).toContainText("새로 쓴 담백한 샘플.");
+  await expect(frame.locator(".uu-card").nth(1)).toContainText("새로 쓴 부드러운 샘플.");
+});
+
+test("the cards stay put while new text is being written", async ({ page }) => {
+  const frame = await openSamples(page, { reply: { plain: "나중에 도착." }, hold: true });
+
+  await frame.locator(".uu-refresh").click();
+
+  // Mid-flight: old text still there, no skeleton, no spinner, nothing blank.
+  await expect(frame.locator(".uu-card").first()).toContainText("예산은 3분기까지 동결된다.");
+  await expect(frame.locator(".uu-refresh")).toBeDisabled();
+  await expect(frame.locator(".uu-cards")).toBeVisible();
+
+  await page.evaluate(() => {
+    window.__holdPreview = false;
+  });
+  await expect(frame.locator(".uu-card").first()).toContainText("나중에 도착.");
+});
+
+test("a failed preview says nothing and loses nothing", async ({ page }) => {
+  const frame = await openSamples(page, { reply: null });
+
+  await frame.locator(".uu-refresh").click();
+  await expect.poll(() => page.evaluate(() => window.__harness.toolCalls.length)).toBe(1);
+
+  // Old cards intact, button usable again, and no banner anywhere.
+  await expect(frame.locator(".uu-card").first()).toContainText("예산은 3분기까지 동결된다.");
+  await expect(frame.locator(".uu-refresh")).toBeEnabled();
+  const text = await frame.locator(".uu-root").innerText();
+  expect(text).not.toMatch(/실패|오류|에러|error|failed/i);
+});
+
+test("the current source box is what preview is grounded in", async ({ page }) => {
+  const frame = await openSamples(page, { reply: { plain: "x" } });
+
+  await frame.locator(".uu-textarea").fill("나중에 붙여넣은 회의록");
+  await frame.locator(".uu-refresh").click();
+  await expect.poll(() => page.evaluate(() => window.__harness.toolCalls.length)).toBe(1);
+
+  const call = await page.evaluate(() => window.__harness.toolCalls[0]);
+  expect(call.arguments.source).toBe("나중에 붙여넣은 회의록");
+});
+
 test("uses no emoji anywhere in its own chrome", async ({ page }) => {
   const frame = await open(page);
   await frame.locator(".uu-fold").first().click();
