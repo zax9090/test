@@ -26,6 +26,7 @@ import type { Fix, Unfolded } from "../lib/schema.js";
 import type { Locale } from "../lib/locale.js";
 import { strings } from "./i18n.js";
 import { AxisList } from "./AxisList.js";
+import { GoalField } from "./GoalField.js";
 import { MapView } from "./MapView.js";
 import { Result } from "./Result.js";
 import { useWidth } from "./useWidth.js";
@@ -115,6 +116,7 @@ function App() {
   // Folded by default; the header is what shows until it is opened.
   const [mapOpen, setMapOpen] = useState(false);
   const [refolding, setRefolding] = useState(false);
+  const [switchingGoal, setSwitchingGoal] = useState(false);
   // An axis the map asked for, held until its row actually exists in the DOM.
   const [pendingAxis, setPendingAxis] = useState<string | null>(null);
 
@@ -199,6 +201,33 @@ function App() {
       setRefolding(false);
     }
   }, [app, payload, refolding, source, t]);
+
+  /**
+   * Switch the reading the axes were built for.
+   *
+   * Same shape as refold, and for the same reason: the answer is a different set
+   * of axes, which is a different widget. Asking the conversation is the one route
+   * that does not depend on the model calling a tool it has never seen — see
+   * docs/stage0-conflicts.md (C8). The old widget stands down on supersession.
+   *
+   * Left disabled afterwards on purpose. The reply does not come back here.
+   */
+  const runGoalSwitch = useCallback(
+    async (reading: string) => {
+      if (!app || switchingGoal || !payload) return;
+      setSwitchingGoal(true);
+
+      try {
+        await app.sendMessage({
+          role: "user",
+          content: [{ type: "text", text: t.goalAsk(payload.unfolded.intent, reading) }],
+        });
+      } catch {
+        setSwitchingGoal(false);
+      }
+    },
+    [app, payload, switchingGoal, t],
+  );
 
   const handleCopy = useCallback(async () => {
     const ok = await copyText(text);
@@ -295,6 +324,18 @@ function App() {
           {t.tabResult}
         </button>
       </div>
+
+      {/* Above the tabs, because it governs both of them: the goal decides which
+          axes exist, so it cannot live inside the list of them. */}
+      {payload.unfolded.goal ? (
+        <GoalField
+          goal={payload.unfolded.goal}
+          onSwitch={runGoalSwitch}
+          switching={switchingGoal}
+          disabled={!app || superseded}
+          t={t}
+        />
+      ) : null}
 
       {/* Both tabs stay mounted so switching keeps scroll and open/closed folds. */}
       <div hidden={tab !== "list"}>

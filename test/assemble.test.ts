@@ -183,6 +183,40 @@ describe("order", () => {
     expect(text.indexOf("가로 512px")).toBeLessThan(text.indexOf("털색은 검은색"));
   });
 
+  it("puts the goal on the line below the intent, above every axis", () => {
+    const withGoal: Unfolded = {
+      ...cat,
+      goal: { selected: "사진처럼 사실적인 그림", alternatives: ["만화풍 그림"] },
+    };
+    const text = assemble(withGoal, state({ selections: { coat: "black" } }));
+
+    expect(text.split("\n")[0]).toBe(cat.intent);
+    expect(text.split("\n")[1]).toBe("사진처럼 사실적인 그림");
+    expect(text.indexOf("사실적인")).toBeLessThan(text.indexOf("털색은 검은색"));
+  });
+
+  it("carries the goal even with nothing decided — it is instruction, not an axis", () => {
+    const withGoal: Unfolded = {
+      ...cat,
+      goal: { selected: "사실적인 그림", alternatives: ["만화풍"] },
+    };
+    expect(assemble(withGoal, state())).toBe(`${cat.intent}\n사실적인 그림`);
+  });
+
+  it("never mentions the alternatives that were not taken", () => {
+    const withGoal: Unfolded = {
+      ...cat,
+      goal: { selected: "사실적인 그림", alternatives: ["만화풍 그림", "수채화 느낌"] },
+    };
+    const text = assemble(withGoal, state({ selections: { coat: "black" } }));
+    expect(text).not.toContain("만화풍");
+    expect(text).not.toContain("수채화");
+  });
+
+  it("adds nothing when there is no goal", () => {
+    expect(assemble(cat, state())).toBe(cat.intent);
+  });
+
   it("never writes a section name into the prompt", () => {
     const text = assemble(cat, state({ selections: { coat: "black", width: 512 } }));
     expect(text).not.toContain("대상");

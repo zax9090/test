@@ -312,4 +312,71 @@ describe("fallbackUnfolded", () => {
     expect(u.sections[0]!.label).toBe("");
     expect(allAxes(u)).toHaveLength(5);
   });
+
+  it("proposes no goal — there was no reading to take", () => {
+    expect(fallbackUnfolded("draw a cat").goal).toBeUndefined();
+  });
+});
+
+// ── the goal ───────────────────────────────────────────────────────────────
+
+describe("parseUnfolded — goal", () => {
+  const withGoal = (goal: unknown) =>
+    parseUnfolded(
+      JSON.stringify({ intent: "웹사이트 설계해줘", goal, sections: [section([axis()])] }),
+      "웹사이트 설계해줘",
+    );
+
+  it("keeps a goal that has alternatives to switch to", () => {
+    const parsed = withGoal({
+      selected: "정보를 보여주는 사이트",
+      alternatives: ["물건을 파는 사이트", "가입을 받는 사이트"],
+    })!;
+    expect(parsed.goal?.selected).toBe("정보를 보여주는 사이트");
+    expect(parsed.goal?.alternatives).toEqual(["물건을 파는 사이트", "가입을 받는 사이트"]);
+  });
+
+  it("drops a goal with no alternatives rather than showing a line nobody can change", () => {
+    expect(
+      withGoal({ selected: "정보를 보여주는 사이트", alternatives: [] })?.goal,
+    ).toBeUndefined();
+    expect(withGoal({ selected: "정보를 보여주는 사이트" })?.goal).toBeUndefined();
+  });
+
+  it("drops a goal with no selected reading", () => {
+    expect(withGoal({ alternatives: ["a", "b"] })?.goal).toBeUndefined();
+    expect(withGoal({ selected: "   ", alternatives: ["a"] })?.goal).toBeUndefined();
+  });
+
+  it("drops an alternative that restates the selected reading", () => {
+    const parsed = withGoal({
+      selected: "정보 사이트",
+      alternatives: ["정보 사이트", "판매 사이트"],
+    })!;
+    expect(parsed.goal?.alternatives).toEqual(["판매 사이트"]);
+  });
+
+  it("dedupes alternatives and caps them at three", () => {
+    const parsed = withGoal({
+      selected: "s",
+      alternatives: ["a", "a", "b", "c", "d", "e"],
+    })!;
+    expect(parsed.goal?.alternatives).toEqual(["a", "b", "c"]);
+  });
+
+  it("survives a goal that is the wrong type entirely", () => {
+    for (const bad of ["nope", 7, [], null, { selected: 5, alternatives: "x" }]) {
+      expect(() => withGoal(bad)).not.toThrow();
+      expect(withGoal(bad)?.goal).toBeUndefined();
+    }
+  });
+
+  it("leaves the goal out when the payload never mentioned one", () => {
+    const parsed = parseUnfolded(
+      JSON.stringify({ intent: "고양이", sections: [section([axis()])] }),
+      "고양이",
+    )!;
+    expect(parsed.goal).toBeUndefined();
+    expect("goal" in parsed).toBe(false);
+  });
 });

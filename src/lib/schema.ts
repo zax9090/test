@@ -79,10 +79,31 @@ export interface Symptom {
   emit: string;
 }
 
+/**
+ * The reading of the request the axes were built for.
+ *
+ * "Design me a website" needs different axes depending on whether it is meant to
+ * inform or to sell, so the model picks the likeliest reading, builds axes for
+ * it, and hands back the readings it did not take. Nothing stops to ask first —
+ * the widget arrives with axes already in it (P3).
+ *
+ * `alternatives` is what makes the goal showable. With none, the field would draw
+ * nothing while `selected` still went into the prompt, and a sentence the user is
+ * never shown is exactly the background wrapping the brief forbids — so a goal
+ * with no alternatives is dropped whole. See docs/stage0-conflicts.md (C11).
+ */
+export interface Goal {
+  /** The reading taken this time. One sentence. */
+  selected: string;
+  /** Readings that would have produced genuinely different axes. */
+  alternatives: string[];
+}
+
 export interface Unfolded {
   title: string;
   /** The user's request, possibly tidied. */
   intent: string;
+  goal?: Goal;
   sections: Section[];
   fixes?: Fix[];
   symptoms?: Symptom[];
@@ -95,6 +116,8 @@ export function allAxes(unfolded: Unfolded): Axis[] {
 
 const AXIS_TYPES = new Set(["select", "multi", "range", "sample"]);
 const MAX_FIXES = 4;
+/** Enough to show a real fork without turning the field into a menu. */
+const MAX_ALTERNATIVES = 3;
 
 function str(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
@@ -261,6 +284,39 @@ function parseSection(raw: unknown, index: number): Section | undefined {
 }
 
 /**
+ * Parse the goal, or `undefined` if there is no showable one.
+ *
+ * Dropped whole when `alternatives` comes back empty. The field would have
+ * nothing to offer, and `selected` would still be written into the prompt — a
+ * line the user never saw and cannot change, which is the background wrapping the
+ * brief rules out. A goal nobody can switch is not a goal, it is a hidden
+ * instruction.
+ *
+ * Alternatives that merely restate the selected reading are dropped too: the
+ * whole value of the field is that the readings fork.
+ */
+function parseGoal(raw: unknown): Goal | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const g = raw as Record<string, unknown>;
+
+  const selected = str(g.selected);
+  if (!selected) return undefined;
+
+  const seen = new Set([selected]);
+  const alternatives: string[] = [];
+  for (const entry of Array.isArray(g.alternatives) ? g.alternatives : []) {
+    const text = str(entry);
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    alternatives.push(text);
+    if (alternatives.length === MAX_ALTERNATIVES) break;
+  }
+
+  if (alternatives.length === 0) return undefined;
+  return { selected, alternatives };
+}
+
+/**
  * Turn raw model output into an `Unfolded`, or `null` if nothing survives.
  *
  * `request` supplies the intent when the model omitted it, so the assembled
@@ -306,6 +362,9 @@ export function parseUnfolded(raw: string | unknown, request: string): Unfolded 
     intent,
     sections,
   };
+
+  const goal = parseGoal(d.goal);
+  if (goal) unfolded.goal = goal;
 
   const fixes = parseFixes(d.fixes);
   if (fixes) unfolded.fixes = fixes;

@@ -170,6 +170,120 @@
   border-bottom-color: currentColor;
 }
 
+/* ── goal ─────────────────────────────────────────────────────────────── */
+
+/*
+ * The goal governs the axes, so it sits above them and is separated by the same
+ * whitespace a section boundary uses — not by a rule, and not by a box. A framed
+ * panel would read as a different kind of object; it is the same kind of thing as
+ * a row, one level up.
+ */
+.uu-goal {
+  padding: 0 2px 12px;
+}
+
+.uu-goal-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.uu-goal-current {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+
+.uu-goal-current:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* The reading is a sentence, so it wraps rather than truncating — a goal cut off
+   mid-clause is a goal the user cannot check. */
+.uu-goal-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.uu-goal-open {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  /* Lines up under the goal text, not under its label — same 84px column the
+     axis labels use, plus the row gap. Reset when the label wraps (see narrow). */
+  padding-left: 94px;
+}
+
+/*
+ * An alternative is a choice, so it is shaped like every other choice in the
+ * widget — a pill that hugs its text. Full-width and square-cornered it was
+ * indistinguishable from the input box directly below it, and read as an empty
+ * field rather than something to click.
+ */
+.uu-goal-alt {
+  appearance: none;
+  align-self: flex-start;
+  max-width: 100%;
+  background: transparent;
+  border: 1px solid var(--color-border-primary, rgba(128, 128, 128, 0.32));
+  border-radius: var(--border-radius-full, 999px);
+  padding: 4px 10px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.uu-goal-alt:hover:not(:disabled) {
+  border-color: currentColor;
+}
+
+.uu-goal-alt:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.uu-goal-own {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.uu-goal-own .uu-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.uu-goal-go {
+  appearance: none;
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm, 6px);
+  padding: 5px 9px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.uu-goal-go:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
 /* ── sections ─────────────────────────────────────────────────────────── */
 
 /*
@@ -577,5 +691,15 @@
   .uu-status {
     order: -1;
     margin-left: auto;
+  }
+
+  /* The goal's label wraps to its own line here too, so the alternatives have no
+     label column left to line up under. */
+  .uu-goal-row {
+    flex-wrap: wrap;
+  }
+
+  .uu-goal-open {
+    padding-left: 0;
   }
 }

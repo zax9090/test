@@ -198,7 +198,15 @@ function renderSource(source: string, locale: AssembleLocale): string {
  */
 export function assemble(unfolded: Unfolded, state: State): string {
   const locale = state.locale ?? "en";
-  const blocks: string[] = [unfolded.intent.trim()];
+
+  // The goal rides with the intent, on the line below it. Unlike an axis it *is*
+  // part of the instruction — it says which reading of the request the rest of the
+  // prompt was built for. It is on screen and switchable, so it is never a
+  // sentence the user did not see.
+  const opening = unfolded.goal
+    ? `${unfolded.intent.trim()}\n${unfolded.goal.selected.trim()}`
+    : unfolded.intent.trim();
+  const blocks: string[] = [opening];
 
   const axisLines = resolveAxes(unfolded, state)
     .filter((r) => r.status !== "unset")

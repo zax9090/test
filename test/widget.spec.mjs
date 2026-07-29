@@ -674,3 +674,107 @@ test("uses no emoji anywhere in its own chrome", async ({ page }) => {
   expect(emoji.test(list)).toBe(false);
   expect(emoji.test(result)).toBe(false);
 });
+
+// ── the goal ───────────────────────────────────────────────────────────────
+
+/** The same payload, plus a reading the axes were built for. */
+const WITH_GOAL = structuredClone(PAYLOAD);
+WITH_GOAL.structuredContent.unfolded.goal = {
+  selected: "사진처럼 사실적인 그림",
+  alternatives: ["만화풍 그림", "수채화 느낌의 그림"],
+};
+
+test("no goal field when the request had only one reading", async ({ page }) => {
+  const frame = await open(page);
+  await expect(frame.locator(".uu-goal")).toHaveCount(0);
+});
+
+test("shows the reading the axes were built for, above the axes", async ({ page }) => {
+  const frame = await open(page, WITH_GOAL);
+
+  await expect(frame.locator(".uu-goal-text")).toHaveText("사진처럼 사실적인 그림");
+
+  // It governs the axes, so it sits above them rather than among them.
+  const goalY = (await frame.locator(".uu-goal").boundingBox()).y;
+  const firstAxisY = (await frame.locator(".uu-row").first().boundingBox()).y;
+  expect(goalY).toBeLessThan(firstAxisY);
+});
+
+test("the goal is in the prompt from the start, on the line below the request", async ({
+  page,
+}) => {
+  const frame = await open(page, WITH_GOAL);
+  const text = await prompt(frame).innerText();
+  const lines = text.split("\n");
+
+  expect(lines[0]).toBe("고양이 이미지 만들어줘");
+  expect(lines[1]).toBe("사진처럼 사실적인 그림");
+});
+
+test("alternatives stay closed until asked for, and never reach the prompt", async ({ page }) => {
+  const frame = await open(page, WITH_GOAL);
+
+  await expect(frame.locator(".uu-goal-alt")).toHaveCount(0);
+  expect(await prompt(frame).innerText()).not.toContain("만화풍");
+
+  await frame.locator(".uu-goal-current").click();
+  await expect(frame.locator(".uu-goal-alt")).toHaveText(["만화풍 그림", "수채화 느낌의 그림"]);
+
+  // Still not in the prompt — only the taken reading is instruction.
+  expect(await prompt(frame).innerText()).not.toContain("만화풍");
+});
+
+test("switching the goal asks the conversation, and says what it costs first", async ({ page }) => {
+  const frame = await open(page, WITH_GOAL);
+  await frame.locator(".uu-goal-current").click();
+
+  // The cost is stated before the click, not after.
+  await expect(frame.locator(".uu-goal-open .uu-note")).toContainText("사라집니다");
+
+  await frame.locator(".uu-goal-alt", { hasText: "만화풍 그림" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
+
+  // Same route as refold: the model is only ever reached as a caller.
+  expect(await page.evaluate(() => window.__harness.toolCalls.length)).toBe(0);
+
+  const sent = await page.evaluate(() => window.__harness.sent[0]);
+  expect(sent.role).toBe("user");
+  expect(sent.text).toContain("고양이 이미지 만들어줘");
+  expect(sent.text).toContain("만화풍 그림");
+});
+
+test("a reading nobody offered can be typed", async ({ page }) => {
+  const frame = await open(page, WITH_GOAL);
+  await frame.locator(".uu-goal-current").click();
+
+  // Nothing typed yet, so there is nothing to switch to.
+  await expect(frame.locator(".uu-goal-go")).toBeDisabled();
+
+  await frame.locator(".uu-goal-own .uu-input").fill("점묘화 느낌의 그림");
+  await expect(frame.locator(".uu-goal-go")).toBeEnabled();
+  await frame.locator(".uu-goal-go").click();
+
+  await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
+  const sent = await page.evaluate(() => window.__harness.sent[0]);
+  expect(sent.text).toContain("점묘화 느낌의 그림");
+});
+
+test("the current reading is not offered as something to switch to", async ({ page }) => {
+  const frame = await open(page, WITH_GOAL);
+  await frame.locator(".uu-goal-current").click();
+
+  const alts = await frame.locator(".uu-goal-alt").allInnerTexts();
+  expect(alts).not.toContain("사진처럼 사실적인 그림");
+});
+
+test("a superseded widget cannot switch the goal either", async ({ page }) => {
+  const frame = await open(page, WITH_GOAL);
+
+  await page.evaluate(() => {
+    const bc = new BroadcastChannel("unknown-unknowns");
+    bc.postMessage({ seq: Number.MAX_SAFE_INTEGER });
+    bc.close();
+  });
+
+  await expect(frame.locator(".uu-goal-current")).toBeDisabled();
+});

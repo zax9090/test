@@ -46,15 +46,30 @@ interface Section {
   axes: Axis[];
 }
 
+interface Goal {
+  selected: string;        // the reading you built these axes for; one sentence
+  alternatives: string[];  // 2-3 readings that would need different axes
+}
+
 interface Unfolded {
   title: string;
   intent: string;      // the user's request, optionally tidied
+  goal?: Goal;         // omit when the request is already specific
   sections: Section[]; // 3-4 of them, 2+ axes each
   fixes?: { label: string; set: Record<string, string> }[];   // at most 4
   symptoms?: { id: string; label: string; emit: string }[];
 }`;
 
 export const TASK = `Find what the request leaves undecided.
+
+If the request could be read several ways and the readings would need different
+axes, pick the likeliest one, put it in \`goal.selected\` as a single sentence, and
+build the axes for that reading. Put 2-3 other readings in \`alternatives\`:
+- They must fork the axes, not the wording. "An informational site" and "a store"
+  need different axes; "a nice site" and "a good site" do not.
+- Do not stop to ask which one. Choose, build, and let the user switch.
+- Omit \`goal\` entirely when the request is already specific enough that there is
+  only one sensible reading. An unswitchable goal is just a hidden instruction.
 
 List the things the user could still specify but hasn't, as axes with choices.
 If source material is given, fit the axes to what the material actually contains.
@@ -92,11 +107,14 @@ Rules for the values you write:
 export interface PromptInput {
   request: string;
   source?: string;
+  /** A reading the user picked or typed. Settles the goal instead of choosing one. */
+  goal?: string;
 }
 
 /** Build the sampling instruction, source included when present. */
-export function buildExtractionPrompt({ request, source }: PromptInput): string {
+export function buildExtractionPrompt({ request, source, goal }: PromptInput): string {
   const clamped = clampSource(source);
+  const chosen = goal?.trim();
 
   const parts = [
     TASK,
@@ -106,6 +124,18 @@ export function buildExtractionPrompt({ request, source }: PromptInput): string 
     "Request:",
     request.trim(),
   ];
+
+  // The user has already settled the reading, so there is nothing to choose. The
+  // alternatives still come back: switching once must not strand them on that
+  // reading with no way back.
+  if (chosen) {
+    parts.push(
+      "",
+      "The user has chosen this reading. Build the axes for it and put it in",
+      "`goal.selected` verbatim, with other readings still in `alternatives`:",
+      chosen,
+    );
+  }
 
   if (clamped) {
     parts.push(

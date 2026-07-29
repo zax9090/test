@@ -33,6 +33,12 @@ export interface Strings {
   refoldContext: string;
   refoldAsk: (intent: string) => string;
   outOfRange: (min: string, max: string) => string;
+  goal: string;
+  goalOwnPlaceholder: string;
+  goalSwitch: string;
+  goalSwitching: string;
+  goalCost: string;
+  goalAsk: (intent: string, reading: string) => string;
 }
 
 const ko: Strings = {
@@ -58,6 +64,12 @@ const ko: Strings = {
   refoldContext: "사용자가 unknown-unknowns 위젯의 자료 칸에 아래 자료를 넣었습니다.",
   refoldAsk: (intent) => `방금 넣은 자료에 맞춰 "${intent}"를 다시 펼쳐줘.`,
   outOfRange: (min, max) => `보통 ${min}~${max} 범위입니다`,
+  goal: "목표",
+  goalOwnPlaceholder: "다르게 읽기",
+  goalSwitch: "이걸로",
+  goalSwitching: "새 축을 뽑는 중",
+  goalCost: "목표를 바꾸면 축이 새로 만들어져서 지금 고른 값은 사라집니다",
+  goalAsk: (intent, reading) => `"${intent}"를 "${reading}"으로 보고 다시 펼쳐줘.`,
 };
 
 const en: Strings = {
@@ -84,6 +96,12 @@ const en: Strings = {
     "The user put the following material into the unknown-unknowns widget's source box.",
   refoldAsk: (intent) => `Unfold "${intent}" again, fitted to the material I just added.`,
   outOfRange: (min, max) => `Usually between ${min} and ${max}`,
+  goal: "Goal",
+  goalOwnPlaceholder: "Read it differently",
+  goalSwitch: "Use this",
+  goalSwitching: "Building new axes",
+  goalCost: "Switching the goal rebuilds the axes, so the values you picked will be lost",
+  goalAsk: (intent, reading) => `Unfold "${intent}" again, read as "${reading}".`,
 };
 
 export function strings(locale: Locale): Strings {
