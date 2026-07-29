@@ -12,12 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import {
-  extractJson,
-  fallbackUnfolded,
-  parseUnfolded,
-  withPreviews,
-} from "../src/lib/schema.js";
+import { extractJson, fallbackUnfolded, parseUnfolded } from "../src/lib/schema.js";
 import { assemble } from "../src/lib/assemble.js";
 
 const axis = (over: Record<string, unknown> = {}) => ({
@@ -239,38 +234,5 @@ describe("fallbackUnfolded", () => {
     const u = fallbackUnfolded("draw a cat");
     expect(u.axes.filter((a) => a.group === "core")).toHaveLength(3);
     expect(u.axes.filter((a) => a.group === "extra")).toHaveLength(2);
-  });
-});
-
-describe("withPreviews", () => {
-  const sample = {
-    id: "voice",
-    label: "문체",
-    group: "core" as const,
-    type: "sample" as const,
-    options: [
-      { value: "plain", label: "담백", emit: "e1", preview: "옛 샘플" },
-      { value: "warm", label: "부드럽게", emit: "e2" },
-    ],
-  };
-
-  it("replaces only what it was given", () => {
-    const next = withPreviews(sample, { warm: "새 샘플" });
-    expect(next.options![0]!.preview).toBe("옛 샘플");
-    expect(next.options![1]!.preview).toBe("새 샘플");
-  });
-
-  it("ignores blank text rather than wiping a card", () => {
-    expect(withPreviews(sample, { plain: "   " }).options![0]!.preview).toBe("옛 샘플");
-  });
-
-  it("does not mutate the axis it was given", () => {
-    withPreviews(sample, { plain: "새 샘플" });
-    expect(sample.options[0]!.preview).toBe("옛 샘플");
-  });
-
-  it("leaves an axis with no options alone", () => {
-    const bare = { id: "x", label: "x", group: "core" as const, type: "range" as const };
-    expect(withPreviews(bare, { a: "b" })).toBe(bare);
   });
 });

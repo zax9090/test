@@ -27,9 +27,7 @@ import { SCHEMA, TASK, clampSource } from "../lib/prompt.js";
 import { extractViaSampling } from "../lib/sampling.js";
 import { fallbackUnfolded, parseUnfolded, type Unfolded } from "../lib/schema.js";
 import { detectLocale } from "../lib/locale.js";
-import { newRequestId, requestStore } from "../lib/store.js";
 import { WIDGET_URI } from "../resources/widget.js";
-import type { Env } from "../env.js";
 
 /**
  * Both invocation paths are described, because the brief wants Claude to reach
@@ -77,7 +75,6 @@ const baseInput = {
 
 export interface UnfoldPayload {
   unfolded: Unfolded;
-  requestId: string;
   locale: "ko" | "en";
   /**
    * The material the request was about, handed back so the widget can seed its
@@ -90,41 +87,23 @@ export interface UnfoldPayload {
    * to travel, and the server still keeps nothing (P1).
    */
   source?: string;
-  /**
-   * Whether the host will lend its model.
-   *
-   * `preview` and `refold` both need one, and the only one they may use is the
-   * host's via sampling. Where that is missing both return nothing by design
-   * (C8) — so the widget hides those actions rather than offering buttons that
-   * cannot respond.
-   */
-  canSample: boolean;
 }
 
 /**
- * Persist what `preview` will need, then build the result payload.
+ * Build the result payload.
  *
- * Storage failures are swallowed: losing the ability to generate previews later
- * is not a reason to withhold the axes now.
+ * Nothing is written down. The axes, the request and the material all travel
+ * back to the widget in the tool result and live there — the server keeps no
+ * copy of any of it, which is what P1 asked for in the first place.
  */
-async function finalize(
-  server: McpServer,
-  env: Env,
+function payloadFor(
   unfolded: Unfolded,
   request: string,
   source: string | undefined,
-): Promise<UnfoldPayload> {
-  const requestId = newRequestId();
-  try {
-    await requestStore(env, requestId).put({ request, source, axes: unfolded.axes });
-  } catch {
-    // preview falls back quietly (brief: no error banners).
-  }
+): UnfoldPayload {
   return {
     unfolded,
-    requestId,
     locale: detectLocale(request),
-    canSample: Boolean(server.server.getClientCapabilities()?.sampling),
     ...(source ? { source } : {}),
   };
 }
@@ -156,7 +135,7 @@ interface UnfoldArgs {
   unfolded?: string;
 }
 
-async function handle(server: McpServer, env: Env, args: UnfoldArgs) {
+async function handle(server: McpServer, args: UnfoldArgs) {
   const { request, source, unfolded: supplied } = args;
   const cleanSource = clampSource(source);
 
@@ -166,14 +145,14 @@ async function handle(server: McpServer, env: Env, args: UnfoldArgs) {
   // unreachable there.
   if (supplied) {
     const parsed = parseUnfolded(supplied, request) ?? fallbackUnfolded(request);
-    return toolResult(await finalize(server, env, parsed, request, cleanSource));
+    return toolResult(payloadFor(parsed, request, cleanSource));
   }
 
   const { unfolded } = await extractViaSampling(server.server, {
     request,
     source: cleanSource,
   });
-  return toolResult(await finalize(server, env, unfolded, request, cleanSource));
+  return toolResult(payloadFor(unfolded, request, cleanSource));
 }
 
 const common = {
@@ -194,7 +173,7 @@ const modelExtractsInput = {
     .describe("The axis JSON you produced, as described in the tool description."),
 };
 
-export function registerUnfold(server: McpServer, env: Env): UnfoldHandle {
+export function registerUnfold(server: McpServer): UnfoldHandle {
   // Registered in the shape that works on any client, so a host that never
   // reports sampling — every Claude surface today — is correct from the start
   // and nothing depends on the narrowing below actually running.
@@ -202,7 +181,7 @@ export function registerUnfold(server: McpServer, env: Env): UnfoldHandle {
     server,
     "unfold",
     { ...common, description: WHEN_MODEL_EXTRACTS, inputSchema: modelExtractsInput },
-    async (args) => handle(server, env, args),
+    async (args) => handle(server, args),
   );
 
   return {

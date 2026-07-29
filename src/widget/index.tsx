@@ -14,7 +14,7 @@ import { createRoot } from "react-dom/client";
 import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react-with-deps";
 
 import { assemble, resolveAxes, type Selection, type State } from "../lib/assemble.js";
-import { withPreviews, type Fix, type Unfolded } from "../lib/schema.js";
+import type { Fix, Unfolded } from "../lib/schema.js";
 import type { Locale } from "../lib/locale.js";
 import { strings } from "./i18n.js";
 import { AxisList } from "./AxisList.js";
@@ -37,10 +37,8 @@ const MAP_MIN_WIDTH = 520;
 
 interface Payload {
   unfolded: Unfolded;
-  requestId?: string;
   locale?: Locale;
   source?: string;
-  canSample?: boolean;
 }
 
 /**
@@ -107,7 +105,6 @@ function App() {
   const [copied, setCopied] = useState(false);
   // Folded by default; the header is what shows until it is opened.
   const [mapOpen, setMapOpen] = useState(false);
-  const [previewing, setPreviewing] = useState<string | null>(null);
   const [refolding, setRefolding] = useState(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -165,82 +162,37 @@ function App() {
   }, []);
 
   /**
-   * Rewrite one axis's samples from the current material.
+   * Ask the conversation to unfold the request again, around the new material.
    *
-   * Only ever reached from the card's own button. The existing cards are left
-   * untouched until new text arrives, so nothing blanks out mid-flight, and a
-   * failure returns no samples and changes nothing — quietly, per the brief.
-   */
-  const runPreview = useCallback(
-    async (axisId: string) => {
-      if (!app || !payload?.requestId || previewing) return;
-      setPreviewing(axisId);
-
-      try {
-        const result = await app.callServerTool({
-          name: "preview",
-          arguments: { requestId: payload.requestId, axisId, source },
-        });
-
-        const structured = result.structuredContent as
-          | { axisId: string; samples: Record<string, string> }
-          | undefined;
-        const samples = structured?.samples ?? {};
-        if (Object.keys(samples).length === 0) return;
-
-        setPayload((prev) =>
-          prev
-            ? {
-                ...prev,
-                unfolded: {
-                  ...prev.unfolded,
-                  axes: prev.unfolded.axes.map((a) =>
-                    a.id === axisId ? withPreviews(a, samples) : a,
-                  ),
-                },
-              }
-            : prev,
-        );
-      } catch {
-        // Silent — the cards already on screen stay as they are.
-      } finally {
-        setPreviewing(null);
-      }
-    },
-    [app, payload?.requestId, previewing, source],
-  );
-
-  /**
-   * Re-extract the axes around material added since the first pass.
+   * There is no way to re-extract in place: that needs a model, and the widget
+   * cannot reach one. The model is only ever a *caller* here — it reaches us by
+   * invoking a tool, never by answering a question. So the widget puts the
+   * material into the model's context and asks, in the user's own words, for
+   * another unfolding.
    *
-   * Selections are deliberately kept. Axis ids that survive keep their values,
-   * and ones that no longer exist are simply ignored — the assembly engine
-   * treats an unknown id as untouched rather than throwing, which is exactly
-   * what makes it safe to swap the axis set underneath a half-filled widget.
-   *
-   * Returning nothing changes nothing, quietly, as everywhere else.
+   * What comes back is a new widget with axes fitted to the material. This one
+   * then hears the newcomer on the supersession channel and stands down, so the
+   * conversation keeps one live widget rather than two that disagree.
    */
   const runRefold = useCallback(async () => {
-    if (!app || !payload?.requestId || refolding) return;
+    if (!app || refolding || !payload) return;
     setRefolding(true);
 
     try {
-      const result = await app.callServerTool({
-        name: "refold",
-        arguments: { requestId: payload.requestId, source },
+      // The material can be long, so it goes to context rather than into a chat
+      // bubble; the visible message stays a single readable sentence.
+      await app.updateModelContext({
+        content: [{ type: "text", text: `${t.refoldContext}\n\n${source.trim()}` }],
       });
-
-      const next = (result.structuredContent as { unfolded?: Unfolded } | undefined)?.unfolded;
-      if (!next?.axes?.length) return;
-
-      setPayload((prev) => (prev ? { ...prev, unfolded: next, source } : prev));
-      setExtrasOpen(false);
+      await app.sendMessage({
+        role: "user",
+        content: [{ type: "text", text: t.refoldAsk(payload.unfolded.intent) }],
+      });
+      // Left disabled: the answer arrives as a new widget, not as a change here.
     } catch {
-      // Keep the axes already on screen.
-    } finally {
       setRefolding(false);
     }
-  }, [app, payload?.requestId, refolding, source]);
+  }, [app, payload, refolding, source, t]);
 
   const handleCopy = useCallback(async () => {
     const ok = await copyText(text);
@@ -339,10 +291,6 @@ function App() {
         <AxisList
           resolved={resolved}
           onChange={setAxis}
-          {...(app && payload.requestId && payload.canSample && !superseded
-            ? { onPreview: runPreview }
-            : {})}
-          previewing={previewing}
           symptoms={payload.unfolded.symptoms ?? []}
           chosenSymptoms={chosenSymptoms}
           onSymptom={toggleSymptom}
@@ -350,7 +298,7 @@ function App() {
           onFreeform={setFreeform}
           source={source}
           onSource={setSource}
-          {...(app && payload.requestId && payload.canSample && !superseded && source.trim()
+          {...(app && !superseded && source.trim()
           && source.trim() !== (payload.source ?? "").trim()
             ? { onRefold: runRefold }
             : {})}

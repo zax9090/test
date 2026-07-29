@@ -1,6 +1,5 @@
 import type { McpSession } from "./session.js";
-import type { StoreEnv } from "./lib/store.js";
 
-export interface Env extends StoreEnv {
+export interface Env {
   MCP_SESSION: DurableObjectNamespace<McpSession>;
 }

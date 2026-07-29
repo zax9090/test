@@ -5,36 +5,20 @@
  * lands. Those get two or three lines written in the direction, from the user's
  * own material, so the difference is read rather than imagined.
  *
- * The refresh button is the only thing that regenerates. Sampling asks the user
- * for approval on hosts that implement it, so generating on render would put a
- * dialog in front of them every time a widget appeared.
- *
- * While new text is coming, the existing cards stay exactly where they are.
- * There is no skeleton and no spinner; the button simply goes quiet. If the
- * refresh fails, nothing is said and nothing is lost — the old cards remain.
+ * The text arrives with the axes and is not rewritten here. Rewriting only
+ * matters when the material changed, and material changing is what refolding is
+ * for — which regenerates these along with everything else.
  */
 
 import type { Axis } from "../lib/schema.js";
-import type { Strings } from "./i18n.js";
-import { Icon } from "./icons.js";
 
 interface SampleCardsProps {
   axis: Axis;
   selected: Set<string>;
   onPick: (value: string) => void;
-  onRefresh?: () => void;
-  refreshing: boolean;
-  t: Strings;
 }
 
-export function SampleCards({
-  axis,
-  selected,
-  onPick,
-  onRefresh,
-  refreshing,
-  t,
-}: SampleCardsProps) {
+export function SampleCards({ axis, selected, onPick }: SampleCardsProps) {
   const options = axis.options ?? [];
 
   return (
@@ -62,17 +46,6 @@ export function SampleCards({
         })}
       </div>
 
-      {onRefresh ? (
-        <button
-          type="button"
-          className="uu-refresh uu-preview"
-          onClick={onRefresh}
-          disabled={refreshing}
-        >
-          <Icon name="i-more" />
-          <span>{refreshing ? t.previewing : t.preview}</span>
-        </button>
-      ) : null}
     </div>
   );
 }

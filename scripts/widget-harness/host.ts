@@ -14,25 +14,15 @@ declare global {
     __harness: {
       sent: Array<{ role: string; text: string }>;
       toolCalls: Array<{ name: string; arguments: unknown }>;
+      /** Text handed to `ui/update-model-context`. */
+      context: string[];
       ready: boolean;
     };
     __payload: unknown;
-    /** Canned `preview` reply. `null` makes the call fail, for the silent path. */
-    __previewReply: Record<string, string> | null;
-    /** Canned `refold` reply. `null` makes the call fail. */
-    __refoldReply: unknown;
-    /** Held open until released, to observe what the widget shows mid-flight. */
-    __holdPreview: boolean;
   }
 }
 
-window.__harness = { sent: [], toolCalls: [], ready: false };
-
-// Defaults only. A test's init script runs before this file, so overwriting
-// unconditionally would wipe whatever it set up.
-if (!("__previewReply" in window)) window.__previewReply = null;
-if (!("__refoldReply" in window)) window.__refoldReply = null;
-if (!("__holdPreview" in window)) window.__holdPreview = false;
+window.__harness = { sent: [], toolCalls: [], context: [], ready: false };
 
 const iframe = document.createElement("iframe");
 iframe.id = "app";
@@ -68,35 +58,18 @@ iframe.addEventListener("load", async () => {
     return {};
   };
 
-  // Stands in for the MCP server the host would proxy `callServerTool` to.
+  // Kept so a stray `callServerTool` would be visible rather than silent — the
+  // widget should not be making any.
   bridge.oncalltool = async ({ name, arguments: args }) => {
     window.__harness.toolCalls.push({ name, arguments: args });
+    throw new Error(`unexpected server tool call: ${name}`);
+  };
 
-    while (window.__holdPreview) {
-      await new Promise((r) => setTimeout(r, 20));
-    }
-
-    if (name === "refold") {
-      if (window.__refoldReply === null) throw new Error("no refold available");
-      const payload = { unfolded: window.__refoldReply };
-      return {
-        content: [{ type: "text", text: JSON.stringify(payload) }],
-        structuredContent: payload,
-      };
-    }
-
-    if (name !== "preview" || window.__previewReply === null) {
-      throw new Error("no preview available");
-    }
-
-    const payload = {
-      axisId: (args as { axisId: string }).axisId,
-      samples: window.__previewReply,
-    };
-    return {
-      content: [{ type: "text", text: JSON.stringify(payload) }],
-      structuredContent: payload,
-    };
+  bridge.onupdatemodelcontext = async ({ content }) => {
+    window.__harness.context.push(
+      content.map((c: { text?: string }) => c.text ?? "").join(""),
+    );
+    return {};
   };
 
   bridge.oninitialized = async () => {

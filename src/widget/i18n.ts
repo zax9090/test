@@ -28,10 +28,10 @@ export interface Strings {
   send: string;
   chars: (n: number) => string;
   clear: string;
-  preview: string;
-  previewing: string;
   refold: string;
   refolding: string;
+  refoldContext: string;
+  refoldAsk: (intent: string) => string;
   outOfRange: (min: string, max: string) => string;
 }
 
@@ -53,10 +53,10 @@ const ko: Strings = {
   send: "대화로 보내기",
   chars: (n) => `${n}자`,
   clear: "해제",
-  preview: "미리보기",
-  previewing: "쓰는 중",
   refold: "이 자료로 다시 펼치기",
-  refolding: "펼치는 중",
+  refolding: "다시 펼치는 중",
+  refoldContext: "사용자가 unknown-unknowns 위젯의 자료 칸에 아래 자료를 넣었습니다.",
+  refoldAsk: (intent) => `방금 넣은 자료에 맞춰 "${intent}"를 다시 펼쳐줘.`,
   outOfRange: (min, max) => `보통 ${min}~${max} 범위입니다`,
 };
 
@@ -78,10 +78,10 @@ const en: Strings = {
   send: "Send to chat",
   chars: (n) => `${n} chars`,
   clear: "Clear",
-  preview: "Preview",
-  previewing: "Writing",
   refold: "Refold around this",
   refolding: "Refolding",
+  refoldContext: "The user put the following material into the unknown-unknowns widget's source box.",
+  refoldAsk: (intent) => `Unfold "${intent}" again, fitted to the material I just added.`,
   outOfRange: (min, max) => `Usually between ${min} and ${max}`,
 };
 

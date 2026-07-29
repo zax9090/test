@@ -111,39 +111,3 @@ export function buildExtractionPrompt({ request, source }: PromptInput): string 
 
   return parts.join("\n");
 }
-
-/**
- * Ask for fresh sample text for one axis.
- *
- * Used by `preview`, which only ever runs from a button press. Sampling puts an
- * approval prompt in front of the user on hosts that implement it, so firing
- * this automatically would mean a dialog every time a widget appeared.
- */
-export function buildPreviewPrompt(
-  { request, source }: PromptInput,
-  axisLabel: string,
-  directions: Array<{ value: string; label: string }>,
-): string {
-  const clamped = clampSource(source);
-
-  return [
-    "Write a short sample for each direction of one axis, so the user can read",
-    "the difference instead of imagining it.",
-    "",
-    `Axis: ${axisLabel}`,
-    "Directions:",
-    ...directions.map((d) => `- ${d.value}: ${d.label}`),
-    "",
-    "Request:",
-    request.trim(),
-    ...(clamped ? ["", "Source material:", clamped] : []),
-    "",
-    "Two or three lines per direction, in the language of the request. Ground",
-    "them in the source material when there is any — this should show what the",
-    "direction does to *this* material, not describe the direction in general.",
-    "",
-    "Reply with JSON only, no code fence, no preamble:",
-    "",
-    '{ "samples": { "<direction value>": "<2-3 lines>" } }',
-  ].join("\n");
-}

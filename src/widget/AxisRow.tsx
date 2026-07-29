@@ -21,9 +21,6 @@ interface AxisRowProps {
   status: AxisStatus;
   values: string[];
   onChange: (axisId: string, value: Selection) => void;
-  /** Absent when the host cannot regenerate samples; the button is then hidden. */
-  onPreview?: (axisId: string) => void;
-  previewing?: boolean;
   t: Strings;
 }
 
@@ -102,15 +99,7 @@ function RangeInput({
   );
 }
 
-export function AxisRow({
-  axis,
-  status,
-  values,
-  onChange,
-  onPreview,
-  previewing = false,
-  t,
-}: AxisRowProps) {
+export function AxisRow({ axis, status, values, onChange, t }: AxisRowProps) {
   const selected = new Set(values);
 
   const toggleSingle = (value: string) => {
@@ -140,14 +129,7 @@ export function AxisRow({
             t={t}
           />
         ) : axis.type === "sample" ? (
-          <SampleCards
-            axis={axis}
-            selected={selected}
-            onPick={(value) => toggleSingle(value)}
-            {...(onPreview ? { onRefresh: () => onPreview(axis.id) } : {})}
-            refreshing={previewing}
-            t={t}
-          />
+          <SampleCards axis={axis} selected={selected} onPick={(value) => toggleSingle(value)} />
         ) : (
           <div className="uu-chips">
             {(axis.options ?? []).map((option) => (

@@ -73,8 +73,7 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
   check("returns axes", payload?.unfolded?.axes?.length === 2);
   check("drops the malformed axis", !payload.unfolded.axes.some((a) => a.id === "broken"));
   check("detects the locale", payload?.locale === "ko");
-  check("mints a requestId", typeof payload?.requestId === "string");
-  check("reports preview as unavailable here", payload?.canSample === false);
+  check("carries no server-side handle", payload?.requestId === undefined);
 
   // The resource the tool points at must exist and be MCP-Apps flavoured HTML.
   const res = await client.readResource({ uri: "ui://unknown-unknowns/widget.html" });
@@ -122,164 +121,39 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
   await client.close();
 }
 
-// ── preview ────────────────────────────────────────────────────────────────
+// ── sample axes come with their text already written ───────────────────────
 {
   const SAMPLE_AXES = JSON.stringify({
-    title: "요약",
-    intent: "회의록을 요약해줘",
-    axes: [
-      {
-        id: "voice",
-        label: "문체",
-        group: "core",
-        type: "sample",
-        options: [
-          { value: "plain", label: "담백하게", emit: "담백한 문체로 쓴다." },
-          { value: "warm", label: "부드럽게", emit: "부드러운 문체로 쓴다." },
-        ],
-      },
-    ],
+    title: "요약", intent: "회의록을 요약해줘",
+    axes: [{
+      id: "voice", label: "문체", group: "core", type: "sample",
+      options: [
+        { value: "plain", label: "담백하게", emit: "담백한 문체로 쓴다.", preview: "예산 동결." },
+        { value: "warm", label: "부드럽게", emit: "부드러운 문체로 쓴다." },
+      ],
+    }],
   });
 
-  // One sampling client serving both prompts: extraction first, then the
-  // preview. On a sampling host `unfold` has no `unfolded` field — the SDK
-  // strips it — so the axes have to come through sampling like they would in
-  // real use.
-  let asked = "";
-  const client = await connect({ sampling: {} }, async (req) => {
-    const text = req.params.messages[0].content.text;
-    const isPreview = /Write a short sample for each direction/.test(text);
-    if (isPreview) asked = text;
+  const client = await connect({});
+  console.log("\n=== sample axes ===");
 
-    return {
-      model: "fake",
-      role: "assistant",
-      content: {
-        type: "text",
-        text: isPreview
-          ? JSON.stringify({
-              samples: { plain: "예산 동결.", warm: "예산은 그대로 갑니다.", ghost: "무시될 것" },
-            })
-          : SAMPLE_AXES,
-      },
-    };
-  });
-
-  console.log("\n=== preview ===");
   const { tools } = await client.listTools();
-  const preview = tools.find((t) => t.name === "preview");
-  // The server still lists it; the spec puts the filtering on the host — "Host
-  // MUST NOT include tools in the agent's tool list when their visibility does
-  // not include model". So what we can assert here is the declaration.
-  check("declared app-only", JSON.stringify(preview?._meta?.ui?.visibility) === '["app"]');
+  // The model reaches us only by calling a tool, so there is exactly one to call.
+  check("only unfold is exposed", tools.map((t) => t.name).join(",") === "unfold");
 
-  const unfolded = await client.callTool({
+  const r = await client.callTool({
     name: "unfold",
-    arguments: { request: "회의록을 요약해줘", source: "예산 동결 결정." },
+    arguments: { request: "회의록을 요약해줘", source: "예산 동결 결정.", unfolded: SAMPLE_AXES },
   });
-  check("stored the sample axis", unfolded.structuredContent.unfolded.axes[0]?.type === "sample");
-  check("reports preview as available here", unfolded.structuredContent.canSample === true);
-  check("hands the source back for the widget's box", unfolded.structuredContent.source === "예산 동결 결정.");
-  const requestId = unfolded.structuredContent.requestId;
+  const axis = r.structuredContent.unfolded.axes[0];
+  check("sample axis survives", axis?.type === "sample");
+  check("its text arrives with the axes", axis.options[0].preview === "예산 동결.");
+  check("hands the source back for the widget's box", r.structuredContent.source === "예산 동결 결정.");
+  check("mints no request id — nothing is stored", r.structuredContent.requestId === undefined);
+  check("the extraction instruction asks for that text", /give every option a/.test(
+    tools[0].description,
+  ));
 
-  const r = await client.callTool({
-    name: "preview",
-    arguments: { requestId, axisId: "voice", source: "예산은 3분기까지 동결." },
-  });
-  const samples = r.structuredContent?.samples ?? {};
-  check("writes a sample per direction", samples.plain === "예산 동결." && samples.warm === "예산은 그대로 갑니다.");
-  check("drops directions that do not exist", !("ghost" in samples));
-  check("uses the source the widget passed", /3분기까지 동결/.test(asked));
-  check("names the directions to the model", /plain: 담백하게/.test(asked));
-
-  const stale = await client.callTool({
-    name: "preview",
-    arguments: { requestId: "no-such-request", axisId: "voice" },
-  });
-  check("expired request returns nothing, quietly", Object.keys(stale.structuredContent.samples).length === 0);
-  check("and is not an error", stale.isError !== true);
-
-  await client.close();
-}
-
-// ── refold ─────────────────────────────────────────────────────────────────
-{
-  const AXES_A = JSON.stringify({
-    title: "a", intent: "회의록을 요약해줘",
-    axes: [{ id: "len", label: "분량", group: "core", type: "select",
-      options: [{ value: "s", label: "짧게", emit: "짧게 쓴다." }] }],
-  });
-  const AXES_B = JSON.stringify({
-    title: "b", intent: "회의록을 요약해줘",
-    axes: [
-      { id: "len", label: "분량", group: "core", type: "select",
-        options: [{ value: "s", label: "짧게", emit: "짧게 쓴다." }] },
-      { id: "speaker", label: "발언자", group: "core", type: "select",
-        options: [{ value: "keep", label: "유지", emit: "발언자를 표기한다." }] },
-    ],
-  });
-
-  let sawSource = "";
-  let calls = 0;
-  const client = await connect({ sampling: {} }, async (req) => {
-    calls++;
-    const text = req.params.messages[0].content.text;
-    const m = text.match(/Source material:\n([\s\S]*?)(\n\n|$)/);
-    if (m) sawSource = m[1].trim();
-    return { model: "fake", role: "assistant",
-      content: { type: "text", text: calls === 1 ? AXES_A : AXES_B } };
-  });
-
-  console.log("\n=== refold ===");
-  const { tools } = await client.listTools();
-  const refold = tools.find((t) => t.name === "refold");
-  check("declared app-only", JSON.stringify(refold?._meta?.ui?.visibility) === '["app"]');
-  check("renders no widget of its own", refold?._meta?.ui?.resourceUri === undefined);
-
-  const first = await client.callTool({
-    name: "unfold", arguments: { request: "회의록을 요약해줘" },
-  });
-  const requestId = first.structuredContent.requestId;
-  check("starts with one axis", first.structuredContent.unfolded.axes.length === 1);
-
-  const again = await client.callTool({
-    name: "refold", arguments: { requestId, source: "예산 동결 논의. 발언자 3명." },
-  });
-  check("re-extracts around the new material", again.structuredContent.unfolded?.axes?.length === 2);
-  check("the material reached the model", /발언자 3명/.test(sawSource));
-
-  // The refreshed store is what a later preview must work from.
-  const stale = await client.callTool({
-    name: "refold", arguments: { requestId: "no-such-request", source: "x" },
-  });
-  check("unknown request returns nothing, quietly", stale.structuredContent.unfolded === undefined);
-  check("and is not an error", stale.isError !== true);
-
-  await client.close();
-}
-
-// ── refold without sampling: nothing, and no error ─────────────────────────
-{
-  const client = await connect({});
-  const r = await client.callTool({
-    name: "refold", arguments: { requestId: "anything", source: "자료" },
-  });
-  console.log("\n=== refold, no sampling ===");
-  check("returns nothing", r.structuredContent.unfolded === undefined);
-  check("still not an error", r.isError !== true);
-  await client.close();
-}
-
-// ── preview without sampling: nothing, and no error ────────────────────────
-{
-  const client = await connect({});
-  const r = await client.callTool({
-    name: "preview",
-    arguments: { requestId: "anything", axisId: "voice" },
-  });
-  console.log("\n=== preview, no sampling ===");
-  check("returns no samples", Object.keys(r.structuredContent.samples).length === 0);
-  check("still not an error", r.isError !== true);
   await client.close();
 }
 

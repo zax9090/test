@@ -17,8 +17,6 @@ import { Icon, STATUS_ICON } from "./icons.js";
 interface AxisListProps {
   resolved: ResolvedAxis[];
   onChange: (axisId: string, value: Selection) => void;
-  onPreview?: (axisId: string) => void;
-  previewing: string | null;
   symptoms: Symptom[];
   chosenSymptoms: string[];
   onSymptom: (id: string) => void;
@@ -26,7 +24,7 @@ interface AxisListProps {
   onFreeform: (value: string) => void;
   source: string;
   onSource: (value: string) => void;
-  /** Absent when the host will not lend a model, so there is nothing to offer. */
+  /** Absent until the box holds material the axes were not built from. */
   onRefold?: () => void;
   refolding: boolean;
   extrasOpen: boolean;
@@ -37,8 +35,6 @@ interface AxisListProps {
 export function AxisList({
   resolved,
   onChange,
-  onPreview,
-  previewing,
   symptoms,
   chosenSymptoms,
   onSymptom,
@@ -63,8 +59,6 @@ export function AxisList({
         status={r.status}
         values={r.values}
         onChange={onChange}
-        {...(onPreview ? { onPreview } : {})}
-        previewing={previewing === r.axis.id}
         t={t}
       />
     ));

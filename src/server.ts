@@ -15,7 +15,6 @@ import { MCP_ROUTE, SESSION_HEADER } from "./session.js";
 import type { Env } from "./env.js";
 
 export { McpSession } from "./session.js";
-export { RequestStore } from "./lib/store.js";
 export type { Env } from "./env.js";
 
 /** Header the streamable-HTTP spec uses to carry the session id. */
