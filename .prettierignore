@@ -1,0 +1,10 @@
+# Vendored — not ours to restyle.
+.claude/
+
+# Generated build output.
+src/generated/
+.harness/
+package-lock.json
+
+# Prose with deliberate line breaks and hand-aligned tables.
+*.md

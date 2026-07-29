@@ -69,7 +69,12 @@ export function AxisList({
 
       {extra.length > 0 ? (
         <>
-          <button type="button" className="uu-fold" onClick={onToggleExtras} aria-expanded={extrasOpen}>
+          <button
+            type="button"
+            className="uu-fold"
+            onClick={onToggleExtras}
+            aria-expanded={extrasOpen}
+          >
             <Icon name={extrasOpen ? "i-less" : "i-more"} />
             <span>{extrasOpen ? t.less : t.more(extra.length)}</span>
           </button>
@@ -139,6 +144,9 @@ export function AxisList({
             from. The brief has the extractor fit axes to the material, and
             material can arrive long after the first pass — but re-extracting is
             the user's call, not something to fire on every keystroke.
+
+            No icon: the eight symbols mean value, absence and confirmation, none
+            of them means "do this again", and nothing decorative is allowed in.
           */}
           {onRefold ? (
             <button
@@ -147,8 +155,7 @@ export function AxisList({
               onClick={onRefold}
               disabled={refolding}
             >
-              <Icon name="i-set" />
-              <span>{refolding ? t.refolding : t.refold}</span>
+              {refolding ? t.refolding : t.refold}
             </button>
           ) : null}
         </div>

@@ -66,9 +66,7 @@ iframe.addEventListener("load", async () => {
   };
 
   bridge.onupdatemodelcontext = async ({ content }) => {
-    window.__harness.context.push(
-      content.map((c: { text?: string }) => c.text ?? "").join(""),
-    );
+    window.__harness.context.push(content.map((c: { text?: string }) => c.text ?? "").join(""));
     return {};
   };
 

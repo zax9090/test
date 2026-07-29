@@ -20,14 +20,7 @@
 import type { JSX } from "react";
 
 export type IconName =
-  | "i-set"
-  | "i-unset"
-  | "i-partial"
-  | "i-copy"
-  | "i-link"
-  | "i-more"
-  | "i-less"
-  | "i-clear";
+  "i-set" | "i-unset" | "i-partial" | "i-copy" | "i-link" | "i-more" | "i-less" | "i-clear";
 
 /** The only two sizes the dash pattern stays even at. */
 export type IconSize = 14 | 20;

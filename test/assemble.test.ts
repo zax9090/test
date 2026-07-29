@@ -19,7 +19,12 @@ const cat: Unfolded = {
       group: "core",
       type: "select",
       options: [
-        { value: "black", label: "검정", emit: "털색은 검은색으로, 밝은 배경과 대비되게 한다.", common: true },
+        {
+          value: "black",
+          label: "검정",
+          emit: "털색은 검은색으로, 밝은 배경과 대비되게 한다.",
+          common: true,
+        },
         { value: "white", label: "흰색", emit: "털색은 흰색으로 한다." },
       ],
     },
@@ -233,7 +238,9 @@ describe("multi and range", () => {
   });
 
   it("fills the range template", () => {
-    expect(assemble(cat, state({ selections: { width: 1024 } }))).toContain("가로 1024px로 만든다.");
+    expect(assemble(cat, state({ selections: { width: 1024 } }))).toContain(
+      "가로 1024px로 만든다.",
+    );
   });
 
   it("accepts a range value that arrives as a string", () => {
@@ -276,7 +283,11 @@ describe("source", () => {
   });
 
   it("uses the English heading for an English request", () => {
-    const text = assemble(cat, { selections: {}, locale: "en", source: "Siamese cats have blue eyes." });
+    const text = assemble(cat, {
+      selections: {},
+      locale: "en",
+      source: "Siamese cats have blue eyes.",
+    });
     expect(text).toContain("Source: Siamese cats have blue eyes.");
   });
 });

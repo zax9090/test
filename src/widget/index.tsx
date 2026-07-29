@@ -9,7 +9,15 @@
  * light or dark theme without shipping a palette of its own.
  */
 
-import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  StrictMode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createRoot } from "react-dom/client";
 import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react-with-deps";
 
@@ -106,6 +114,8 @@ function App() {
   // Folded by default; the header is what shows until it is opened.
   const [mapOpen, setMapOpen] = useState(false);
   const [refolding, setRefolding] = useState(false);
+  // An axis the map asked for, held until its row actually exists in the DOM.
+  const [pendingAxis, setPendingAxis] = useState<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const width = useWidth(rootRef);
@@ -142,19 +152,14 @@ function App() {
     [payload, state],
   );
 
-  const text = useMemo(
-    () => (payload ? assemble(payload.unfolded, state) : ""),
-    [payload, state],
-  );
+  const text = useMemo(() => (payload ? assemble(payload.unfolded, state) : ""), [payload, state]);
 
   const setAxis = useCallback((axisId: string, value: Selection) => {
     setSelections((prev) => ({ ...prev, [axisId]: value }));
   }, []);
 
   const toggleSymptom = useCallback((id: string) => {
-    setChosenSymptoms((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
-    );
+    setChosenSymptoms((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
   }, []);
 
   const applyFix = useCallback((fix: Fix) => {
@@ -218,22 +223,30 @@ function App() {
    *
    * The map navigates, it does not edit — so this lands on the row in the list
    * tab, opening the extras fold first if the axis is hiding inside it.
+   *
+   * The scroll is deferred to a layout effect rather than a frame callback: the
+   * row may not exist yet when this runs, and a single `requestAnimationFrame`
+   * can land before React has committed the newly unfolded rows. Holding the
+   * target in state means the effect simply runs again on the render that
+   * finally produces it.
    */
   const gotoAxis = useCallback(
     (axisId: string) => {
       const axis = payload?.unfolded.axes.find((a) => a.id === axisId);
       if (axis && axis.group !== "core") setExtrasOpen(true);
       setTab("list");
-
-      // After the fold has rendered, not before.
-      requestAnimationFrame(() => {
-        rootRef.current
-          ?.querySelector(`[data-axis="${CSS.escape(axisId)}"]`)
-          ?.scrollIntoView({ block: "center", behavior: "smooth" });
-      });
+      setPendingAxis(axisId);
     },
     [payload],
   );
+
+  useLayoutEffect(() => {
+    if (!pendingAxis) return;
+    const row = rootRef.current?.querySelector(`[data-axis="${CSS.escape(pendingAxis)}"]`);
+    if (!row) return; // Not rendered yet — try again when it is.
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    setPendingAxis(null);
+  }, [pendingAxis, extrasOpen, tab, resolved]);
 
   if (!payload) return <div className="uu-root" ref={rootRef} />;
 
@@ -298,8 +311,10 @@ function App() {
           onFreeform={setFreeform}
           source={source}
           onSource={setSource}
-          {...(app && !superseded && source.trim()
-          && source.trim() !== (payload.source ?? "").trim()
+          {...(app &&
+          !superseded &&
+          source.trim() &&
+          source.trim() !== (payload.source ?? "").trim()
             ? { onRefold: runRefold }
             : {})}
           refolding={refolding}

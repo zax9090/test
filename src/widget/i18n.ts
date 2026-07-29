@@ -80,7 +80,8 @@ const en: Strings = {
   clear: "Clear",
   refold: "Refold around this",
   refolding: "Refolding",
-  refoldContext: "The user put the following material into the unknown-unknowns widget's source box.",
+  refoldContext:
+    "The user put the following material into the unknown-unknowns widget's source box.",
   refoldAsk: (intent) => `Unfold "${intent}" again, fitted to the material I just added.`,
   outOfRange: (min, max) => `Usually between ${min} and ${max}`,
 };

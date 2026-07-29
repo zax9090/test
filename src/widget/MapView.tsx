@@ -38,23 +38,38 @@ interface Placed {
   axis: ResolvedAxis;
   x: number;
   y: number;
+  /** Where the label sits — pushed out on crowded rings so neighbours clear. */
+  lx: number;
+  ly: number;
   angle: number;
   radius: number;
   node: number;
+  crowded: boolean;
 }
 
+/** How far every second label is pushed out when a ring gets tight. */
+const STAGGER = 15;
+
 function place(items: ResolvedAxis[], radius: number, node: number, offset: number): Placed[] {
+  const crowded = items.length > CROWDED;
+
   return items.map((axis, i) => {
     // Start at twelve o'clock and go clockwise. The half-step offset on the
     // outer ring keeps outer nodes from hiding directly behind inner spokes.
     const angle = (-90 + (360 * (i + offset)) / Math.max(items.length, 1)) * (Math.PI / 180);
+    // Alternating the label radius doubles the arc each one has to itself, which
+    // is what stops neighbouring labels colliding once the ring fills up.
+    const labelRadius = radius + (crowded && i % 2 === 1 ? STAGGER : 0);
     return {
       axis,
       x: Math.cos(angle) * radius,
       y: Math.sin(angle) * radius,
+      lx: Math.cos(angle) * labelRadius,
+      ly: Math.sin(angle) * labelRadius,
       angle,
       radius,
       node,
+      crowded,
     };
   });
 }
@@ -115,13 +130,12 @@ export function MapView({ resolved, intent, onPick, width }: MapViewProps) {
       <g transform={`translate(${cx} ${cy})`}>
         {placed.map((p) => {
           const decided = p.axis.status !== "unset";
-          const crowded = (p.radius === CORE_RADIUS ? core.length : extra.length) > CROWDED;
           // Anchor labels away from the centre so text runs outward, not across
           // the diagram.
           const outward = Math.cos(p.angle);
           const anchor = Math.abs(outward) < 0.25 ? "middle" : outward > 0 ? "start" : "end";
           const pad = anchor === "middle" ? 0 : outward > 0 ? 9 : -9;
-          const labelY = Math.abs(outward) < 0.25 ? (p.y > 0 ? p.y + 18 : p.y - 12) : p.y + 4;
+          const labelY = Math.abs(outward) < 0.25 ? (p.ly > 0 ? p.ly + 18 : p.ly - 12) : p.ly + 4;
 
           return (
             <g
@@ -141,13 +155,7 @@ export function MapView({ resolved, intent, onPick, width }: MapViewProps) {
               }}
             >
               <title>{p.axis.axis.label}</title>
-              <line
-                x1={0}
-                y1={0}
-                x2={p.x}
-                y2={p.y}
-                strokeDasharray={decided ? undefined : "3 3"}
-              />
+              <line x1={0} y1={0} x2={p.x} y2={p.y} strokeDasharray={decided ? undefined : "3 3"} />
               {/* Square, because a node stands for a value (icon grammar). */}
               <rect
                 x={p.x - p.node}
@@ -157,8 +165,8 @@ export function MapView({ resolved, intent, onPick, width }: MapViewProps) {
                 strokeDasharray={decided ? undefined : "2 2"}
                 fill={p.axis.status === "set" ? "currentColor" : "none"}
               />
-              <text x={p.x + pad} y={labelY} textAnchor={anchor}>
-                {clip(p.axis.axis.label, crowded)}
+              <text x={p.lx + pad} y={labelY} textAnchor={anchor}>
+                {clip(p.axis.axis.label, p.crowded)}
               </text>
               {/* The node marks are 7-10px across, too small to hit reliably.
                   This transparent disc is the actual target. */}

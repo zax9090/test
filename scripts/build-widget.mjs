@@ -33,6 +33,15 @@ const result = await build({
   platform: "browser",
   target: ["es2022"],
   jsx: "automatic",
+  // Preact through the compat layer. React's own build is ~170KB of the bundle
+  // and this widget uses nothing outside the common API; the host fetches this
+  // document as a resource, so the weight is on every render.
+  alias: {
+    react: "preact/compat",
+    "react-dom/client": "preact/compat/client",
+    "react-dom": "preact/compat",
+    "react/jsx-runtime": "preact/compat/jsx-runtime",
+  },
   minify: true,
   write: false,
   legalComments: "none",

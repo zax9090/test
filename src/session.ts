@@ -55,7 +55,7 @@ Leave it alone when the request is already specific — answer that directly.`;
  * server is connected. `unfold` then narrows itself in `oninitialized`, which is
  * the earliest point the client's sampling capability is known.
  */
-function buildServer(env: Env): McpServer {
+function buildServer(): McpServer {
   const server = new McpServer(SERVER_INFO, {
     instructions: INSTRUCTIONS,
     capabilities: { tools: {}, resources: {} },
@@ -102,7 +102,7 @@ export class McpSession extends DurableObject<Env> {
       eventStore: new DurableObjectEventStore(this.ctx.storage),
     });
 
-    return createLegacyMcpHandler(buildServer(this.env), {
+    return createLegacyMcpHandler(buildServer(), {
       route: MCP_ROUTE,
       transport,
     });

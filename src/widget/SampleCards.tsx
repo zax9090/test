@@ -45,7 +45,6 @@ export function SampleCards({ axis, selected, onPick }: SampleCardsProps) {
           );
         })}
       </div>
-
     </div>
   );
 }

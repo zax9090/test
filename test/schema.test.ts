@@ -87,7 +87,9 @@ describe("parseUnfolded — salvage", () => {
 
   it("drops an option with neither label nor value", () => {
     const raw = payload({
-      axes: [axis({ options: [{ emit: "떠돌이 문장" }, { value: "black", label: "검정", emit: "e" }] })],
+      axes: [
+        axis({ options: [{ emit: "떠돌이 문장" }, { value: "black", label: "검정", emit: "e" }] }),
+      ],
     });
     expect(parseUnfolded(raw, "고양이")!.axes[0]!.options).toHaveLength(1);
   });
@@ -154,7 +156,9 @@ describe("parseUnfolded — ids", () => {
   });
 
   it("invents ids by position when the model omits them", () => {
-    const raw = payload({ axes: [{ label: "털색", group: "core", options: [{ value: "b", label: "검정", emit: "e" }] }] });
+    const raw = payload({
+      axes: [{ label: "털색", group: "core", options: [{ value: "b", label: "검정", emit: "e" }] }],
+    });
     expect(parseUnfolded(raw, "고양이")!.axes[0]!.id).toBe("axis-0");
   });
 });
@@ -166,12 +170,19 @@ describe("parseUnfolded — fixes and symptoms", () => {
   });
 
   it("drops a fix that sets nothing", () => {
-    const raw = payload({ fixes: [{ label: "empty", set: {} }, { label: "ok", set: { coat: "black" } }] });
+    const raw = payload({
+      fixes: [
+        { label: "empty", set: {} },
+        { label: "ok", set: { coat: "black" } },
+      ],
+    });
     expect(parseUnfolded(raw, "고양이")!.fixes).toHaveLength(1);
   });
 
   it("keeps symptoms and gives them ids when missing", () => {
-    const raw = payload({ symptoms: [{ label: "밋밋함", emit: "대비를 준다." }, { label: "산만함" }] });
+    const raw = payload({
+      symptoms: [{ label: "밋밋함", emit: "대비를 준다." }, { label: "산만함" }],
+    });
     const symptoms = parseUnfolded(raw, "고양이")!.symptoms!;
     expect(symptoms.map((s) => s.id)).toEqual(["symptom-0", "symptom-1"]);
     expect(symptoms[1]!.emit).toBe("산만함");

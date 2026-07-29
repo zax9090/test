@@ -248,9 +248,7 @@ test("send hands the assembled prompt to the host", async ({ page }) => {
   await resultTab(frame).click();
   await frame.locator(".uu-btn", { hasText: "대화로 보내기" }).click();
 
-  await expect
-    .poll(() => page.evaluate(() => window.__harness.sent.length))
-    .toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBeGreaterThan(0);
 
   const sent = await page.evaluate(() => window.__harness.sent[0]);
   expect(sent.role).toBe("user");

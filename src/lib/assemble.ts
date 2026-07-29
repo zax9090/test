@@ -89,13 +89,14 @@ function renderRange(axis: Axis, value: number): string | undefined {
  * Out-of-range numbers are emitted unchanged: the widget informs, it does not
  * block (P4).
  */
-function renderSelection(axis: Axis, raw: Selection): { line: string; values: string[] } | undefined {
+function renderSelection(
+  axis: Axis,
+  raw: Selection,
+): { line: string; values: string[] } | undefined {
   if (raw === null || raw === undefined) return undefined;
 
   if (Array.isArray(raw)) {
-    const options = raw
-      .map((v) => findOption(axis, v))
-      .filter((o): o is Option => Boolean(o));
+    const options = raw.map((v) => findOption(axis, v)).filter((o): o is Option => Boolean(o));
     if (options.length === 0) return undefined;
     // One line per axis, even when several values are on. Keeps "one axis
     // decided adds one entry" true for multi as well as select.

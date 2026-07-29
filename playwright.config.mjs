@@ -1,4 +1,13 @@
+import { existsSync } from "node:fs";
 import { defineConfig } from "@playwright/test";
+
+/**
+ * This sandbox ships a pre-installed Chromium at a fixed path and blocks
+ * downloads; CI installs its own. Point at the local one only when it is
+ * actually there, so both work without a flag.
+ */
+const PREINSTALLED = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
+const launchOptions = existsSync(PREINSTALLED) ? { executablePath: PREINSTALLED } : {};
 
 export default defineConfig({
   testDir: "./test",
@@ -17,13 +26,5 @@ export default defineConfig({
     reuseExistingServer: true,
     timeout: 60_000,
   },
-  projects: [
-    {
-      name: "chromium",
-      use: {
-        browserName: "chromium",
-        launchOptions: { executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" },
-      },
-    },
-  ],
+  projects: [{ name: "chromium", use: { browserName: "chromium", launchOptions } }],
 });

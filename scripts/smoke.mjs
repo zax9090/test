@@ -60,9 +60,15 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
 
   console.log("=== no sampling ===");
   check("tool is registered", Boolean(unfold));
-  check("declares a widget resource", unfold._meta?.ui?.resourceUri === "ui://unknown-unknowns/widget.html");
+  check(
+    "declares a widget resource",
+    unfold._meta?.ui?.resourceUri === "ui://unknown-unknowns/widget.html",
+  );
   check("asks the model for `unfolded`", "unfolded" in (unfold.inputSchema.properties ?? {}));
-  check("carries the extraction instruction", /Find what the request leaves undecided/.test(unfold.description));
+  check(
+    "carries the extraction instruction",
+    /Find what the request leaves undecided/.test(unfold.description),
+  );
   check("tells Claude when not to call it", /Do NOT call this/.test(unfold.description));
 
   const r = await client.callTool({
@@ -110,7 +116,10 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
 
   console.log("\n=== sampling ===");
   check("does not ask the model for axes", !("unfolded" in (unfold.inputSchema.properties ?? {})));
-  check("keeps the description short", !/Find what the request leaves undecided/.test(unfold.description));
+  check(
+    "keeps the description short",
+    !/Find what the request leaves undecided/.test(unfold.description),
+  );
 
   const r = await client.callTool({
     name: "unfold",
@@ -124,14 +133,20 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
 // ── sample axes come with their text already written ───────────────────────
 {
   const SAMPLE_AXES = JSON.stringify({
-    title: "요약", intent: "회의록을 요약해줘",
-    axes: [{
-      id: "voice", label: "문체", group: "core", type: "sample",
-      options: [
-        { value: "plain", label: "담백하게", emit: "담백한 문체로 쓴다.", preview: "예산 동결." },
-        { value: "warm", label: "부드럽게", emit: "부드러운 문체로 쓴다." },
-      ],
-    }],
+    title: "요약",
+    intent: "회의록을 요약해줘",
+    axes: [
+      {
+        id: "voice",
+        label: "문체",
+        group: "core",
+        type: "sample",
+        options: [
+          { value: "plain", label: "담백하게", emit: "담백한 문체로 쓴다.", preview: "예산 동결." },
+          { value: "warm", label: "부드럽게", emit: "부드러운 문체로 쓴다." },
+        ],
+      },
+    ],
   });
 
   const client = await connect({});
@@ -148,11 +163,15 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
   const axis = r.structuredContent.unfolded.axes[0];
   check("sample axis survives", axis?.type === "sample");
   check("its text arrives with the axes", axis.options[0].preview === "예산 동결.");
-  check("hands the source back for the widget's box", r.structuredContent.source === "예산 동결 결정.");
+  check(
+    "hands the source back for the widget's box",
+    r.structuredContent.source === "예산 동결 결정.",
+  );
   check("mints no request id — nothing is stored", r.structuredContent.requestId === undefined);
-  check("the extraction instruction asks for that text", /give every option a/.test(
-    tools[0].description,
-  ));
+  check(
+    "the extraction instruction asks for that text",
+    /give every option a/.test(tools[0].description),
+  );
 
   await client.close();
 }

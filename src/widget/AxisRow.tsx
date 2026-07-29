@@ -108,9 +108,7 @@ export function AxisRow({ axis, status, values, onChange, t }: AxisRowProps) {
   };
 
   const toggleMulti = (value: string) => {
-    const next = selected.has(value)
-      ? values.filter((v) => v !== value)
-      : [...values, value];
+    const next = selected.has(value) ? values.filter((v) => v !== value) : [...values, value];
     onChange(axis.id, next.length ? next : null);
   };
 
@@ -122,12 +120,7 @@ export function AxisRow({ axis, status, values, onChange, t }: AxisRowProps) {
 
       <div className="uu-values">
         {axis.type === "range" ? (
-          <RangeInput
-            axis={axis}
-            value={values[0]}
-            onChange={(v) => onChange(axis.id, v)}
-            t={t}
-          />
+          <RangeInput axis={axis} value={values[0]} onChange={(v) => onChange(axis.id, v)} t={t} />
         ) : axis.type === "sample" ? (
           <SampleCards axis={axis} selected={selected} onPick={(value) => toggleSingle(value)} />
         ) : (

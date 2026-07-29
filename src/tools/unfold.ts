@@ -63,10 +63,7 @@ ${TASK}
 ${SCHEMA}`;
 
 const baseInput = {
-  request: z
-    .string()
-    .min(1)
-    .describe("The user's request, verbatim and in their own language."),
+  request: z.string().min(1).describe("The user's request, verbatim and in their own language."),
   source: z
     .string()
     .optional()

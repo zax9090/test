@@ -146,7 +146,8 @@ function parseAxis(raw: unknown, index: number): Axis | undefined {
     ? (a.options.map(parseOption).filter(Boolean) as Option[])
     : [];
 
-  const rawRange = a.range && typeof a.range === "object" ? (a.range as Record<string, unknown>) : undefined;
+  const rawRange =
+    a.range && typeof a.range === "object" ? (a.range as Record<string, unknown>) : undefined;
   const emitTemplate = rawRange ? str(rawRange.emitTemplate) : undefined;
   const range: AxisRange | undefined =
     rawRange && emitTemplate
@@ -237,9 +238,7 @@ export function parseUnfolded(raw: string | unknown, request: string): Unfolded 
   if (!data || typeof data !== "object") return null;
 
   const d = data as Record<string, unknown>;
-  const axes = Array.isArray(d.axes)
-    ? (d.axes.map(parseAxis).filter(Boolean) as Axis[])
-    : [];
+  const axes = Array.isArray(d.axes) ? (d.axes.map(parseAxis).filter(Boolean) as Axis[]) : [];
   if (axes.length === 0) return null;
 
   // Duplicate ids would make two rows share one slot in the selection state.
@@ -284,9 +283,21 @@ export function fallbackUnfolded(request: string): Unfolded {
           group: "core",
           type: "select",
           options: [
-            { value: "inform", label: "설명", emit: "읽는 사람이 내용을 이해하는 것을 목적으로 한다." },
-            { value: "persuade", label: "설득", emit: "읽는 사람의 판단을 바꾸는 것을 목적으로 한다." },
-            { value: "record", label: "기록", emit: "나중에 다시 찾아볼 수 있게 남기는 것을 목적으로 한다." },
+            {
+              value: "inform",
+              label: "설명",
+              emit: "읽는 사람이 내용을 이해하는 것을 목적으로 한다.",
+            },
+            {
+              value: "persuade",
+              label: "설득",
+              emit: "읽는 사람의 판단을 바꾸는 것을 목적으로 한다.",
+            },
+            {
+              value: "record",
+              label: "기록",
+              emit: "나중에 다시 찾아볼 수 있게 남기는 것을 목적으로 한다.",
+            },
           ],
         },
         {
@@ -295,9 +306,21 @@ export function fallbackUnfolded(request: string): Unfolded {
           group: "core",
           type: "select",
           options: [
-            { value: "expert", label: "전문가", emit: "해당 분야를 아는 사람을 독자로 삼아 용어를 풀지 않는다." },
-            { value: "general", label: "일반", emit: "배경지식이 없는 사람도 읽을 수 있게 용어를 풀어 쓴다." },
-            { value: "self", label: "본인", emit: "본인만 보는 글이므로 설명을 생략하고 요점만 남긴다." },
+            {
+              value: "expert",
+              label: "전문가",
+              emit: "해당 분야를 아는 사람을 독자로 삼아 용어를 풀지 않는다.",
+            },
+            {
+              value: "general",
+              label: "일반",
+              emit: "배경지식이 없는 사람도 읽을 수 있게 용어를 풀어 쓴다.",
+            },
+            {
+              value: "self",
+              label: "본인",
+              emit: "본인만 보는 글이므로 설명을 생략하고 요점만 남긴다.",
+            },
           ],
         },
         {
@@ -341,9 +364,21 @@ export function fallbackUnfolded(request: string): Unfolded {
           group: "core",
           type: "select",
           options: [
-            { value: "inform", label: "Inform", emit: "The aim is for the reader to understand the material." },
-            { value: "persuade", label: "Persuade", emit: "The aim is to change the reader's judgement." },
-            { value: "record", label: "Record", emit: "The aim is a record that holds up when revisited later." },
+            {
+              value: "inform",
+              label: "Inform",
+              emit: "The aim is for the reader to understand the material.",
+            },
+            {
+              value: "persuade",
+              label: "Persuade",
+              emit: "The aim is to change the reader's judgement.",
+            },
+            {
+              value: "record",
+              label: "Record",
+              emit: "The aim is a record that holds up when revisited later.",
+            },
           ],
         },
         {
@@ -352,9 +387,21 @@ export function fallbackUnfolded(request: string): Unfolded {
           group: "core",
           type: "select",
           options: [
-            { value: "expert", label: "Expert", emit: "Written for someone in the field; terms are left unexplained." },
-            { value: "general", label: "General", emit: "Written so someone without background can follow it; terms are explained." },
-            { value: "self", label: "Just me", emit: "Written only for myself, so skip explanation and keep the points." },
+            {
+              value: "expert",
+              label: "Expert",
+              emit: "Written for someone in the field; terms are left unexplained.",
+            },
+            {
+              value: "general",
+              label: "General",
+              emit: "Written so someone without background can follow it; terms are explained.",
+            },
+            {
+              value: "self",
+              label: "Just me",
+              emit: "Written only for myself, so skip explanation and keep the points.",
+            },
           ],
         },
         {
@@ -364,8 +411,16 @@ export function fallbackUnfolded(request: string): Unfolded {
           type: "select",
           options: [
             { value: "short", label: "Short", emit: "Keep it short — the essentials only." },
-            { value: "medium", label: "Medium", emit: "Medium length, covering the points and the reasoning behind them." },
-            { value: "long", label: "Long", emit: "Go into detail, including background and examples." },
+            {
+              value: "medium",
+              label: "Medium",
+              emit: "Medium length, covering the points and the reasoning behind them.",
+            },
+            {
+              value: "long",
+              label: "Long",
+              emit: "Go into detail, including background and examples.",
+            },
           ],
         },
         {
@@ -376,7 +431,11 @@ export function fallbackUnfolded(request: string): Unfolded {
           options: [
             { value: "prose", label: "Prose", emit: "Write it as connected paragraphs." },
             { value: "bullets", label: "List", emit: "Write it as a list of separated points." },
-            { value: "table", label: "Table", emit: "Lay it out as a table so the comparison is visible." },
+            {
+              value: "table",
+              label: "Table",
+              emit: "Lay it out as a table so the comparison is visible.",
+            },
           ],
         },
         {
