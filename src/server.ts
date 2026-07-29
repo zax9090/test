@@ -21,6 +21,10 @@ export type { Env } from "./env.js";
 /** Header the streamable-HTTP spec uses to carry the session id. */
 const MCP_SESSION_HEADER = "mcp-session-id";
 
+function accepts(request: Request, type: string): boolean {
+  return (request.headers.get("accept") ?? "").includes(type);
+}
+
 async function routeToSession(request: Request, env: Env): Promise<Response> {
   // Absent on `initialize` — that request mints the session.
   const sessionId = request.headers.get(MCP_SESSION_HEADER) ?? crypto.randomUUID();
@@ -47,6 +51,13 @@ export default {
     }
 
     if (url.pathname === MCP_ROUTE) {
+      // A browser opening this URL gets a JSON-RPC "must accept
+      // text/event-stream" error, which reads as a broken server. Every real MCP
+      // client asks for that content type, so anything that does not is a person
+      // looking, and gets the page instead. The protocol path is untouched.
+      if (request.method === "GET" && !accepts(request, "text/event-stream")) {
+        return landingResponse(url.origin);
+      }
       return routeToSession(request, env);
     }
 

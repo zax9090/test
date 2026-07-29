@@ -70,6 +70,24 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
 
   const health = await fetch(`${URL_.origin}/health`);
   check("health says ok", (await health.text()).trim() === "ok");
+
+  // A browser opening the MCP endpoint gets the page, not a JSON-RPC error.
+  const browsed = await fetch(URL_.href, { headers: { accept: "text/html,*/*;q=0.8" } });
+  const browsedBody = await browsed.text();
+  check(
+    "a browser at /mcp gets the page",
+    browsed.status === 200 && browsedBody.includes("<!doctype html>"),
+  );
+
+  // And the protocol path is untouched: a client asking for the stream is not
+  // handed HTML. Everything below this point proves the rest of it works.
+  const streamed = await fetch(URL_.href, {
+    headers: { accept: "application/json, text/event-stream" },
+  });
+  check(
+    "a client at /mcp still reaches the protocol",
+    !(await streamed.text()).includes("<!doctype html>"),
+  );
 }
 
 // ── client without sampling: the model is asked to supply the axes ──────────
