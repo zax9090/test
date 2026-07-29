@@ -21,7 +21,11 @@ import { AxisList } from "./AxisList.js";
 import { MapView } from "./MapView.js";
 import { Result } from "./Result.js";
 import { useWidth } from "./useWidth.js";
+import { useSupersession } from "./useSupersession.js";
 import { Icon } from "./icons.js";
+
+/** Shared by every instance of this widget, across all of a conversation's turns. */
+const CHANNEL = "unknown-unknowns";
 
 /**
  * Below this the map is not drawn at all — the header stands alone.
@@ -35,6 +39,8 @@ interface Payload {
   unfolded: Unfolded;
   requestId?: string;
   locale?: Locale;
+  source?: string;
+  canPreview?: boolean;
 }
 
 /**
@@ -93,6 +99,7 @@ function readPayload(result: { structuredContent?: unknown; content?: unknown })
 function App() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [selections, setSelections] = useState<Record<string, Selection>>({});
+  const [chosenSymptoms, setChosenSymptoms] = useState<string[]>([]);
   const [freeform, setFreeform] = useState("");
   const [source, setSource] = useState("");
   const [tab, setTab] = useState<"list" | "result">("list");
@@ -104,6 +111,7 @@ function App() {
 
   const rootRef = useRef<HTMLDivElement>(null);
   const width = useWidth(rootRef);
+  const superseded = useSupersession(CHANNEL);
 
   const { app } = useApp({
     appInfo: { name: "unknown-unknowns", version: "0.1.0" },
@@ -112,7 +120,11 @@ function App() {
     onAppCreated: (instance) => {
       instance.ontoolresult = (result) => {
         const next = readPayload(result);
-        if (next) setPayload(next);
+        if (!next) return;
+        setPayload(next);
+        // Seed the box with the material the request came with, so what is on
+        // screen is what gets copied.
+        if (next.source) setSource(next.source);
       };
     },
   });
@@ -123,8 +135,8 @@ function App() {
   const t = useMemo(() => strings(locale), [locale]);
 
   const state: State = useMemo(
-    () => ({ selections, freeform, source, locale }),
-    [selections, freeform, source, locale],
+    () => ({ selections, symptoms: chosenSymptoms, freeform, source, locale }),
+    [selections, chosenSymptoms, freeform, source, locale],
   );
 
   const resolved = useMemo(
@@ -139,6 +151,12 @@ function App() {
 
   const setAxis = useCallback((axisId: string, value: Selection) => {
     setSelections((prev) => ({ ...prev, [axisId]: value }));
+  }, []);
+
+  const toggleSymptom = useCallback((id: string) => {
+    setChosenSymptoms((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
+    );
   }, []);
 
   const applyFix = useCallback((fix: Fix) => {
@@ -288,8 +306,13 @@ function App() {
         <AxisList
           resolved={resolved}
           onChange={setAxis}
-          {...(app && payload.requestId ? { onPreview: runPreview } : {})}
+          {...(app && payload.requestId && payload.canPreview && !superseded
+            ? { onPreview: runPreview }
+            : {})}
           previewing={previewing}
+          symptoms={payload.unfolded.symptoms ?? []}
+          chosenSymptoms={chosenSymptoms}
+          onSymptom={toggleSymptom}
           freeform={freeform}
           onFreeform={setFreeform}
           source={source}
@@ -310,7 +333,7 @@ function App() {
           onCopy={handleCopy}
           onSend={handleSend}
           copied={copied}
-          canSend={Boolean(app)}
+          canSend={Boolean(app) && !superseded}
           t={t}
         />
       </div>

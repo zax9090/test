@@ -19,6 +19,7 @@ export interface Strings {
   freeform: string;
   freeformPlaceholder: string;
   source: string;
+  symptoms: string;
   sourcePlaceholder: string;
   onBehalf: (n: number) => string;
   delegated: string;
@@ -41,6 +42,7 @@ const ko: Strings = {
   freeform: "더 넣을 말",
   freeformPlaceholder: "",
   source: "자료",
+  symptoms: "걸리는 점",
   sourcePlaceholder: "",
   onBehalf: (n) => `대신 정한 것 ${n}개`,
   delegated: "AI가 알아서 정함",
@@ -63,6 +65,7 @@ const en: Strings = {
   freeform: "Anything else",
   freeformPlaceholder: "",
   source: "Source",
+  symptoms: "What's off",
   sourcePlaceholder: "",
   onBehalf: (n) => `Decided for you: ${n}`,
   delegated: "left to the AI",

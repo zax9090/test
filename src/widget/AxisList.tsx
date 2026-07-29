@@ -9,15 +9,19 @@
  */
 
 import type { ResolvedAxis, Selection } from "../lib/assemble.js";
+import type { Symptom } from "../lib/schema.js";
 import type { Strings } from "./i18n.js";
 import { AxisRow } from "./AxisRow.js";
-import { Icon } from "./icons.js";
+import { Icon, STATUS_ICON } from "./icons.js";
 
 interface AxisListProps {
   resolved: ResolvedAxis[];
   onChange: (axisId: string, value: Selection) => void;
   onPreview?: (axisId: string) => void;
   previewing: string | null;
+  symptoms: Symptom[];
+  chosenSymptoms: string[];
+  onSymptom: (id: string) => void;
   freeform: string;
   onFreeform: (value: string) => void;
   source: string;
@@ -32,6 +36,9 @@ export function AxisList({
   onChange,
   onPreview,
   previewing,
+  symptoms,
+  chosenSymptoms,
+  onSymptom,
   freeform,
   onFreeform,
   source,
@@ -69,6 +76,38 @@ export function AxisList({
           </button>
           {extrasOpen ? rows(extra) : null}
         </>
+      ) : null}
+
+      {/*
+        Not an axis — these say what is wrong with the result rather than what it
+        should be, which is why they sit after the axes and carry their own
+        sentences. Multi-select: several things can be off at once.
+      */}
+      {symptoms.length > 0 ? (
+        <div className="uu-row">
+          <div className="uu-label">{t.symptoms}</div>
+          <div className="uu-values">
+            <div className="uu-chips">
+              {symptoms.map((symptom) => {
+                const on = chosenSymptoms.includes(symptom.id);
+                return (
+                  <button
+                    key={symptom.id}
+                    type="button"
+                    className={`uu-chip${on ? " is-on" : ""}`}
+                    aria-pressed={on}
+                    onClick={() => onSymptom(symptom.id)}
+                  >
+                    {symptom.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="uu-status" data-status={chosenSymptoms.length ? "set" : "unset"}>
+            <Icon name={STATUS_ICON[chosenSymptoms.length ? "set" : "unset"]} />
+          </div>
+        </div>
       ) : null}
 
       {/* Always present, so a value outside the offered set never has nowhere to go (P4). */}

@@ -381,6 +381,7 @@ const SAMPLE_PAYLOAD = {
   structuredContent: {
     locale: "ko",
     requestId: "req-1",
+    canPreview: true,
     unfolded: {
       title: "요약",
       intent: "회의록을 요약해줘",
@@ -504,6 +505,123 @@ test("the current source box is what preview is grounded in", async ({ page }) =
 
   const call = await page.evaluate(() => window.__harness.toolCalls[0]);
   expect(call.arguments.source).toBe("나중에 붙여넣은 회의록");
+});
+
+// ── symptoms ───────────────────────────────────────────────────────────────
+
+const SYMPTOM_PAYLOAD = {
+  content: [{ type: "text", text: "{}" }],
+  structuredContent: {
+    locale: "ko",
+    requestId: "req-s",
+    canPreview: false,
+    unfolded: {
+      title: "고양이",
+      intent: "고양이 이미지 만들어줘",
+      axes: [
+        {
+          id: "coat",
+          label: "털색",
+          group: "core",
+          type: "select",
+          options: [{ value: "black", label: "검정", emit: "털색은 검은색." }],
+        },
+      ],
+      symptoms: [
+        { id: "flat", label: "밋밋함", emit: "명암 대비를 더 준다." },
+        { id: "busy", label: "산만함", emit: "배경 요소를 줄인다." },
+      ],
+    },
+  },
+};
+
+test("symptoms are offered, and reach the prompt", async ({ page }) => {
+  const frame = await open(page, SYMPTOM_PAYLOAD);
+
+  await expect(frame.locator(".uu-label").filter({ hasText: "걸리는 점" })).toBeVisible();
+  await expect(prompt(frame)).toHaveText("고양이 이미지 만들어줘");
+
+  await frame.locator(".uu-chip", { hasText: "밋밋함" }).click();
+  await expect(prompt(frame)).toContainText("명암 대비를 더 준다.");
+
+  // Several things can be off at once.
+  await frame.locator(".uu-chip", { hasText: "산만함" }).click();
+  await expect(prompt(frame)).toContainText("배경 요소를 줄인다.");
+
+  // And they clear like any other chip.
+  await frame.locator(".uu-chip", { hasText: "밋밋함" }).click();
+  await expect(prompt(frame)).not.toContainText("명암 대비");
+});
+
+test("symptoms land after the axes in the prompt", async ({ page }) => {
+  const frame = await open(page, SYMPTOM_PAYLOAD);
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await frame.locator(".uu-chip", { hasText: "밋밋함" }).click();
+
+  const text = await prompt(frame).innerText();
+  expect(text.indexOf("털색은 검은색")).toBeLessThan(text.indexOf("명암 대비"));
+});
+
+// ── source round trip ──────────────────────────────────────────────────────
+
+test("material given with the request shows up in the box and the prompt", async ({ page }) => {
+  const frame = await open(page, {
+    content: [{ type: "text", text: "{}" }],
+    structuredContent: {
+      ...SYMPTOM_PAYLOAD.structuredContent,
+      source: "예산은 3분기까지 동결하기로 했다.",
+    },
+  });
+
+  await expect(frame.locator(".uu-textarea")).toHaveValue("예산은 3분기까지 동결하기로 했다.");
+  await expect(prompt(frame)).toContainText("자료: 예산은 3분기까지 동결하기로 했다.");
+});
+
+// ── preview gating ─────────────────────────────────────────────────────────
+
+test("no preview button on a host that cannot write one", async ({ page }) => {
+  const frame = await open(page, {
+    ...SAMPLE_PAYLOAD,
+    structuredContent: { ...SAMPLE_PAYLOAD.structuredContent, canPreview: false },
+  });
+
+  // The cards are still there and still choosable — only the button that would
+  // never respond is gone.
+  await expect(frame.locator(".uu-card")).toHaveCount(3);
+  await expect(frame.locator(".uu-refresh")).toHaveCount(0);
+});
+
+// ── supersession ───────────────────────────────────────────────────────────
+
+test("a superseded widget stops speaking for the user", async ({ page }) => {
+  const frame = await open(page);
+  await expect(frame.locator(".uu-tab", { hasText: "결과" })).toBeVisible();
+  await frame.locator(".uu-tab", { hasText: "결과" }).click();
+  await expect(frame.locator(".uu-btn", { hasText: "대화로 보내기" })).toBeVisible();
+
+  // Stand in for a newer widget mounting in a later turn.
+  await page.evaluate(() => {
+    const bc = new BroadcastChannel("unknown-unknowns");
+    bc.postMessage({ seq: Number.MAX_SAFE_INTEGER });
+    bc.close();
+  });
+
+  await expect(frame.locator(".uu-btn", { hasText: "대화로 보내기" })).toHaveCount(0);
+  // Copying an older widget is harmless and stays.
+  await expect(frame.locator(".uu-btn", { hasText: "복사" })).toBeVisible();
+});
+
+test("an earlier announcement does not silence a newer widget", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-tab", { hasText: "결과" }).click();
+
+  await page.evaluate(() => {
+    const bc = new BroadcastChannel("unknown-unknowns");
+    bc.postMessage({ seq: 1 });
+    bc.close();
+  });
+
+  await expect(frame.locator(".uu-btn", { hasText: "대화로 보내기" })).toBeVisible();
 });
 
 test("uses no emoji anywhere in its own chrome", async ({ page }) => {

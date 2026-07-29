@@ -79,6 +79,25 @@ export interface UnfoldPayload {
   unfolded: Unfolded;
   requestId: string;
   locale: "ko" | "en";
+  /**
+   * The material the request was about, handed back so the widget can seed its
+   * source box with it.
+   *
+   * Without this, source given to Claude shapes the axes and then vanishes: the
+   * widget starts empty, so the assembled prompt silently omits the very
+   * document the task is about, while source typed into the box does appear.
+   * Round-tripping through the tool result is how the brief intends widget state
+   * to travel, and the server still keeps nothing (P1).
+   */
+  source?: string;
+  /**
+   * Whether `preview` can actually write anything on this host.
+   *
+   * It needs a model, and the only one it may use is the host's via sampling.
+   * Where that is missing the tool returns nothing by design (C8) — so the
+   * widget hides the button rather than offering one that never responds.
+   */
+  canPreview: boolean;
 }
 
 /**
@@ -88,6 +107,7 @@ export interface UnfoldPayload {
  * is not a reason to withhold the axes now.
  */
 async function finalize(
+  server: McpServer,
   env: Env,
   unfolded: Unfolded,
   request: string,
@@ -99,7 +119,13 @@ async function finalize(
   } catch {
     // preview falls back quietly (brief: no error banners).
   }
-  return { unfolded, requestId, locale: detectLocale(request) };
+  return {
+    unfolded,
+    requestId,
+    locale: detectLocale(request),
+    canPreview: Boolean(server.server.getClientCapabilities()?.sampling),
+    ...(source ? { source } : {}),
+  };
 }
 
 function toolResult(payload: UnfoldPayload) {
@@ -139,14 +165,14 @@ async function handle(server: McpServer, env: Env, args: UnfoldArgs) {
   // unreachable there.
   if (supplied) {
     const parsed = parseUnfolded(supplied, request) ?? fallbackUnfolded(request);
-    return toolResult(await finalize(env, parsed, request, cleanSource));
+    return toolResult(await finalize(server, env, parsed, request, cleanSource));
   }
 
   const { unfolded } = await extractViaSampling(server.server, {
     request,
     source: cleanSource,
   });
-  return toolResult(await finalize(env, unfolded, request, cleanSource));
+  return toolResult(await finalize(server, env, unfolded, request, cleanSource));
 }
 
 const common = {

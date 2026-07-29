@@ -74,6 +74,7 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
   check("drops the malformed axis", !payload.unfolded.axes.some((a) => a.id === "broken"));
   check("detects the locale", payload?.locale === "ko");
   check("mints a requestId", typeof payload?.requestId === "string");
+  check("reports preview as unavailable here", payload?.canPreview === false);
 
   // The resource the tool points at must exist and be MCP-Apps flavoured HTML.
   const res = await client.readResource({ uri: "ui://unknown-unknowns/widget.html" });
@@ -177,6 +178,8 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
     arguments: { request: "회의록을 요약해줘", source: "예산 동결 결정." },
   });
   check("stored the sample axis", unfolded.structuredContent.unfolded.axes[0]?.type === "sample");
+  check("reports preview as available here", unfolded.structuredContent.canPreview === true);
+  check("hands the source back for the widget's box", unfolded.structuredContent.source === "예산 동결 결정.");
   const requestId = unfolded.structuredContent.requestId;
 
   const r = await client.callTool({
