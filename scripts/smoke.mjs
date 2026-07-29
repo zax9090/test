@@ -1,10 +1,14 @@
 /**
  * Manual end-to-end check of the MCP server over real MCP.
  *
- * Not part of `npm test` — it needs a server running:
+ * Not part of `npm test` — it needs a server to talk to. Locally:
  *
  *   npm run build:widget && npx wrangler dev --port 8788 --local
  *   node scripts/smoke.mjs
+ *
+ * Or against a deployed Worker, to confirm the remote behaves like the local one:
+ *
+ *   node scripts/smoke.mjs https://unknown-unknowns.<subdomain>.workers.dev/mcp
  *
  * Checks that `unfold` takes the right shape for each kind of client, that both
  * extraction routes end in axes, and that the widget resource is actually
@@ -15,7 +19,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CreateMessageRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
-const URL_ = new URL("http://127.0.0.1:8788/mcp");
+const target = process.argv[2] ?? "http://127.0.0.1:8788/mcp";
+// Accept a bare origin too, since that is what a deploy prints.
+const URL_ = new URL(target.endsWith("/mcp") ? target : new URL("/mcp", target).href);
+console.log(`→ ${URL_.href}\n`);
 
 const CANNED = JSON.stringify({
   title: "고양이 이미지",
