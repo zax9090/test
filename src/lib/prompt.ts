@@ -33,7 +33,6 @@ export const SCHEMA = `interface Option {
 interface Axis {
   id: string;
   label: string;
-  group: 'core' | 'extra';
   type: 'select' | 'multi' | 'range' | 'sample';
   options?: Option[];
   range?: { unit: string; min?: number; max?: number; emitTemplate: string };
@@ -41,10 +40,16 @@ interface Axis {
   default?: string | number | null;   // if present, shown as decided-on-your-behalf
 }
 
+interface Section {
+  id: string;
+  label: string;       // a short noun phrase: "Subject", not "the subject of the image"
+  axes: Axis[];
+}
+
 interface Unfolded {
   title: string;
   intent: string;      // the user's request, optionally tidied
-  axes: Axis[];        // no count limit
+  sections: Section[]; // 3-4 of them, 2+ axes each
   fixes?: { label: string; set: Record<string, string> }[];   // at most 4
   symptoms?: { id: string; label: string; emit: string }[];
 }`;
@@ -54,7 +59,18 @@ export const TASK = `Find what the request leaves undecided.
 List the things the user could still specify but hasn't, as axes with choices.
 If source material is given, fit the axes to what the material actually contains.
 Do not cap the count artificially — pull every axis that genuinely matters.
-Mark the 3-4 that change the result most as \`core\`; everything else is \`extra\`.
+
+Then group those axes by what they are about, into sections:
+- 3-4 sections, each holding 2 or more axes. One axis per section is not a
+  grouping, it is the same flat list with extra headings.
+- Name the sections for this task. There is no fixed taxonomy: an image might
+  divide into subject, frame and setting, a piece of writing into audience,
+  content and form.
+- A section label is a short noun phrase. "Subject", not "the subject of the
+  image" — a heading long enough to read is a heading that gets in the way of
+  scanning.
+- Inside a section, put the axis that changes the result most at the top. Do not
+  mark it in any way; the position is the whole signal.
 
 Rules for the values you write:
 - Write every label, option label, \`emit\` sentence and \`norm\` in the same

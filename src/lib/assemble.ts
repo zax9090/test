@@ -5,14 +5,19 @@
  * I/O. Everything the widget shows in the result tab comes from here, so the
  * copied text and the on-screen rows can never disagree.
  *
- * Order is fixed — intent, axes (core before extra), symptoms, freeform, source.
+ * Order is fixed — intent, then the sections in the order they were declared and
+ * the axes in the order each section lists them, then symptoms, freeform, source.
+ *
+ * Section names are not written into the prompt. They organise the screen; they
+ * are not instructions, and a model reading "Environment" above a sentence would
+ * be reading something the user never said.
  *
  * An axis that was not decided contributes nothing (P2). It is not rendered as
  * "unspecified", not defaulted into a sentence, not mentioned at all — turning
  * more axes on must not make the prompt longer than what was actually chosen.
  */
 
-import type { Axis, Option, Unfolded } from "./schema.js";
+import { allAxes, type Axis, type Option, type Unfolded } from "./schema.js";
 
 /** Which locale the assembled prose is written for. Only affects the source heading. */
 export type AssembleLocale = "ko" | "en";
@@ -50,6 +55,8 @@ export type AxisStatus = "set" | "partial" | "unset";
 
 export interface ResolvedAxis {
   axis: Axis;
+  /** Which section the axis was declared in, so the list can group its rows. */
+  sectionId: string;
   status: AxisStatus;
   /** The sentence this axis contributes. Empty when `unset`. */
   line: string;
@@ -130,11 +137,6 @@ function renderSelection(
   return undefined;
 }
 
-/** core before extra, original order preserved inside each group. */
-function ordered(axes: Axis[]): Axis[] {
-  return [...axes.filter((a) => a.group === "core"), ...axes.filter((a) => a.group !== "core")];
-}
-
 /**
  * Work out the status and sentence of every axis, in output order.
  *
@@ -143,22 +145,33 @@ function ordered(axes: Axis[]): Axis[] {
  */
 export function resolveAxes(unfolded: Unfolded, state: State): ResolvedAxis[] {
   const selections = state.selections ?? {};
+  const sectionOf = new Map<string, string>();
+  for (const section of unfolded.sections) {
+    for (const axis of section.axes) sectionOf.set(axis.id, section.id);
+  }
 
-  return ordered(unfolded.axes).map((axis) => {
+  return allAxes(unfolded).map((axis) => {
+    const sectionId = sectionOf.get(axis.id) ?? "";
     const chosen = renderSelection(axis, selections[axis.id]);
     if (chosen) {
-      return { axis, status: "set" as const, line: chosen.line, values: chosen.values };
+      return { axis, sectionId, status: "set" as const, line: chosen.line, values: chosen.values };
     }
 
     // Nothing chosen — a `default` stands in, and says so on screen.
     if (axis.default !== undefined && axis.default !== null) {
       const applied = renderSelection(axis, axis.default);
       if (applied) {
-        return { axis, status: "partial" as const, line: applied.line, values: applied.values };
+        return {
+          axis,
+          sectionId,
+          status: "partial" as const,
+          line: applied.line,
+          values: applied.values,
+        };
       }
     }
 
-    return { axis, status: "unset" as const, line: "", values: [] };
+    return { axis, sectionId, status: "unset" as const, line: "", values: [] };
   });
 }
 

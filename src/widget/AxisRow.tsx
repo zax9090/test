@@ -28,17 +28,20 @@ function Chip({
   label,
   common,
   selected,
+  standIn,
   onClick,
 }: {
   label: string;
   common?: boolean;
   selected: boolean;
+  /** Carrying a `default` the user has not touched — decided, but not by them. */
+  standIn?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      className={`uu-chip${selected ? " is-on" : ""}`}
+      className={`uu-chip${selected ? (standIn ? " is-default" : " is-on") : ""}`}
       aria-pressed={selected}
       onClick={onClick}
     >
@@ -101,18 +104,28 @@ function RangeInput({
 
 export function AxisRow({ axis, status, values, onChange, t }: AxisRowProps) {
   const selected = new Set(values);
+  const isMulti = axis.type === "multi";
+  // A defaulted value must not look like a chosen one. With no fold left, these
+  // axes are on screen from the start, and a filled chip nobody clicked reads as
+  // a preselection — which the brief forbids (P7).
+  const standIn = status === "partial";
 
   const toggleSingle = (value: string) => {
-    // Clicking the selected chip again clears it.
+    // Clicking a stand-in adopts it. Clearing it would fall straight back to the
+    // same default and nothing on screen would move, so the one thing the user
+    // must be able to say about a value chosen for them — "yes, I mean it" —
+    // would have no gesture at all.
+    if (standIn) return onChange(axis.id, value);
+    // Clicking the chosen chip again clears it.
     onChange(axis.id, selected.has(value) ? null : value);
   };
 
   const toggleMulti = (value: string) => {
     const next = selected.has(value) ? values.filter((v) => v !== value) : [...values, value];
+    // Emptying a defaulted multi has nowhere to land — the schema has no
+    // "explicitly none" — so it returns to the stand-in, same as a cleared select.
     onChange(axis.id, next.length ? next : null);
   };
-
-  const isMulti = axis.type === "multi";
 
   return (
     <div className="uu-row" data-axis={axis.id}>
@@ -131,6 +144,7 @@ export function AxisRow({ axis, status, values, onChange, t }: AxisRowProps) {
                 label={option.label}
                 common={option.common}
                 selected={selected.has(option.value)}
+                standIn={standIn}
                 onClick={() => (isMulti ? toggleMulti(option.value) : toggleSingle(option.value))}
               />
             ))}

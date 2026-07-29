@@ -86,7 +86,7 @@ async function copyText(text: string): Promise<boolean> {
 /** Pull the payload out of a tool result, whichever slot the host filled. */
 function readPayload(result: { structuredContent?: unknown; content?: unknown }): Payload | null {
   const structured = result.structuredContent as Payload | undefined;
-  if (structured?.unfolded?.axes) return structured;
+  if (structured?.unfolded?.sections?.length) return structured;
 
   const content = result.content as Array<{ type?: string; text?: string }> | undefined;
   const text = content?.find((c) => c.type === "text")?.text;
@@ -94,8 +94,10 @@ function readPayload(result: { structuredContent?: unknown; content?: unknown })
 
   try {
     const parsed = JSON.parse(text) as Payload | Unfolded;
-    if ("unfolded" in parsed && parsed.unfolded?.axes) return parsed as Payload;
-    if ("axes" in parsed && Array.isArray(parsed.axes)) return { unfolded: parsed as Unfolded };
+    if ("unfolded" in parsed && parsed.unfolded?.sections?.length) return parsed as Payload;
+    if ("sections" in parsed && Array.isArray(parsed.sections)) {
+      return { unfolded: parsed as Unfolded };
+    }
   } catch {
     // Not JSON — nothing to render.
   }
@@ -109,7 +111,6 @@ function App() {
   const [freeform, setFreeform] = useState("");
   const [source, setSource] = useState("");
   const [tab, setTab] = useState<"list" | "result">("list");
-  const [extrasOpen, setExtrasOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   // Folded by default; the header is what shows until it is opened.
   const [mapOpen, setMapOpen] = useState(false);
@@ -230,15 +231,10 @@ function App() {
    * target in state means the effect simply runs again on the render that
    * finally produces it.
    */
-  const gotoAxis = useCallback(
-    (axisId: string) => {
-      const axis = payload?.unfolded.axes.find((a) => a.id === axisId);
-      if (axis && axis.group !== "core") setExtrasOpen(true);
-      setTab("list");
-      setPendingAxis(axisId);
-    },
-    [payload],
-  );
+  const gotoAxis = useCallback((axisId: string) => {
+    setTab("list");
+    setPendingAxis(axisId);
+  }, []);
 
   useLayoutEffect(() => {
     if (!pendingAxis) return;
@@ -246,7 +242,7 @@ function App() {
     if (!row) return; // Not rendered yet — try again when it is.
     row.scrollIntoView({ block: "center", behavior: "smooth" });
     setPendingAxis(null);
-  }, [pendingAxis, extrasOpen, tab, resolved]);
+  }, [pendingAxis, tab, resolved]);
 
   if (!payload) return <div className="uu-root" ref={rootRef} />;
 
@@ -271,6 +267,7 @@ function App() {
 
       {showMap && mapOpen ? (
         <MapView
+          sections={payload.unfolded.sections}
           resolved={resolved}
           intent={payload.unfolded.intent}
           onPick={gotoAxis}
@@ -302,6 +299,7 @@ function App() {
       {/* Both tabs stay mounted so switching keeps scroll and open/closed folds. */}
       <div hidden={tab !== "list"}>
         <AxisList
+          sections={payload.unfolded.sections}
           resolved={resolved}
           onChange={setAxis}
           symptoms={payload.unfolded.symptoms ?? []}
@@ -318,8 +316,6 @@ function App() {
             ? { onRefold: runRefold }
             : {})}
           refolding={refolding}
-          extrasOpen={extrasOpen}
-          onToggleExtras={() => setExtrasOpen((v) => !v)}
           t={t}
         />
       </div>

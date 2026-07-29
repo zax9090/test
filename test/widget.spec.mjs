@@ -18,52 +18,65 @@ const PAYLOAD = {
     unfolded: {
       title: "고양이 이미지",
       intent: "고양이 이미지 만들어줘",
-      axes: [
+      sections: [
         {
-          id: "coat",
-          label: "털색",
-          group: "core",
-          type: "select",
-          norm: "보통 단색이 인식률이 높습니다",
-          options: [
-            { value: "black", label: "검정", emit: "털색은 검은색으로 한다.", common: true },
-            { value: "white", label: "흰색", emit: "털색은 흰색으로 한다." },
+          id: "subject",
+          label: "대상",
+          axes: [
+            {
+              id: "coat",
+              label: "털색",
+              type: "select",
+              norm: "보통 단색이 인식률이 높습니다",
+              options: [
+                { value: "black", label: "검정", emit: "털색은 검은색으로 한다.", common: true },
+                { value: "white", label: "흰색", emit: "털색은 흰색으로 한다." },
+              ],
+            },
+            {
+              id: "pose",
+              label: "자세",
+              type: "select",
+              options: [
+                { value: "lying", label: "누움", emit: "누워 있는 자세로 그린다." },
+                { value: "sitting", label: "앉음", emit: "앉아 있는 자세로 그린다." },
+              ],
+            },
           ],
         },
         {
-          id: "pose",
-          label: "자세",
-          group: "core",
-          type: "select",
-          options: [
-            { value: "lying", label: "누움", emit: "누워 있는 자세로 그린다." },
-            { value: "sitting", label: "앉음", emit: "앉아 있는 자세로 그린다." },
+          id: "setting",
+          label: "환경",
+          axes: [
+            {
+              id: "light",
+              label: "조명",
+              type: "select",
+              default: "soft",
+              options: [
+                { value: "soft", label: "부드럽게", emit: "부드러운 조명을 쓴다." },
+                { value: "hard", label: "강하게", emit: "강한 조명을 쓴다." },
+              ],
+            },
+            {
+              id: "bg",
+              label: "배경",
+              type: "select",
+              options: [{ value: "plain", label: "단색", emit: "배경은 단색으로 한다." }],
+            },
           ],
         },
         {
-          id: "light",
-          label: "조명",
-          group: "extra",
-          type: "select",
-          default: "soft",
-          options: [
-            { value: "soft", label: "부드럽게", emit: "부드러운 조명을 쓴다." },
-            { value: "hard", label: "강하게", emit: "강한 조명을 쓴다." },
+          id: "frame",
+          label: "화면",
+          axes: [
+            {
+              id: "width",
+              label: "가로",
+              type: "range",
+              range: { unit: "px", min: 256, max: 2048, emitTemplate: "가로 {value}px로 만든다." },
+            },
           ],
-        },
-        {
-          id: "bg",
-          label: "배경",
-          group: "extra",
-          type: "select",
-          options: [{ value: "plain", label: "단색", emit: "배경은 단색으로 한다." }],
-        },
-        {
-          id: "width",
-          label: "가로",
-          group: "extra",
-          type: "range",
-          range: { unit: "px", min: 256, max: 2048, emitTemplate: "가로 {value}px로 만든다." },
         },
       ],
       fixes: [{ label: "단색 배경", set: { bg: "plain" } }],
@@ -96,20 +109,49 @@ test("renders the request and its core axes", async ({ page }) => {
   await expect(frame.locator(".uu-norm")).toHaveText("보통 단색이 인식률이 높습니다");
 });
 
-test("folds extra axes behind a count, with no wording beyond the number", async ({ page }) => {
+test("groups axes into named sections, all of them open", async ({ page }) => {
   const frame = await open(page);
 
-  const fold = frame.locator(".uu-fold").first();
-  await expect(fold).toHaveText("더 정하기 (3)");
+  await expect(frame.locator(".uu-section-label")).toHaveText(["대상", "환경", "화면"]);
 
-  // Extras are hidden until asked for.
-  await expect(frame.locator(".uu-label").filter({ hasText: "배경" })).toHaveCount(0);
-  await fold.click();
-  await expect(frame.locator(".uu-label").filter({ hasText: "배경" })).toBeVisible();
+  // Nothing is folded away — every axis is reachable without opening anything.
+  for (const label of ["털색", "자세", "조명", "배경", "가로"]) {
+    await expect(frame.locator(".uu-label").filter({ hasText: label })).toBeVisible();
+  }
+  // The list has no folds left. (The result tab keeps one, for the
+  // decided-for-you group — that is a different thing in a different place.)
+  await expect(frame.locator(".uu-list .uu-fold")).toHaveCount(0);
+});
 
-  // P6 / "do not": no sufficiency claim, no progress, no completeness figure.
+test("says nothing beside a section heading — no count, no progress", async ({ page }) => {
+  const frame = await open(page);
+
+  // A counter next to a heading would read as a target (P6, "do not").
+  for (const heading of await frame.locator(".uu-section-label").all()) {
+    expect(await heading.innerText()).not.toMatch(/\d/);
+  }
   const text = await frame.locator(".uu-list").innerText();
-  expect(text).not.toMatch(/충분|완성도|최적화|%/);
+  expect(text).not.toMatch(/충분|완성도|최적화|%|\d+\s*\/\s*\d+/);
+});
+
+test("separates sections with space, not a rule", async ({ page }) => {
+  const frame = await open(page);
+  const sections = frame.locator(".uu-section");
+
+  const borders = await sections.evaluateAll((els) =>
+    els.map((el) => {
+      const s = getComputedStyle(el);
+      return [s.borderTopWidth, s.borderBottomWidth, s.borderTopStyle];
+    }),
+  );
+  for (const [top, bottom] of borders) {
+    expect(top).toBe("0px");
+    expect(bottom).toBe("0px");
+  }
+
+  // And the gap between sections is real.
+  const gap = await sections.nth(1).evaluate((el) => getComputedStyle(el).marginTop);
+  expect(parseFloat(gap)).toBeGreaterThan(14);
 });
 
 test("nothing is preselected, including the common value", async ({ page }) => {
@@ -118,6 +160,21 @@ test("nothing is preselected, including the common value", async ({ page }) => {
   await expect(frame.locator(".uu-chip.is-on")).toHaveCount(0);
   // `common` shows a dot and nothing more.
   await expect(frame.locator(".uu-chip", { hasText: "검정" }).locator(".uu-dot")).toHaveCount(1);
+});
+
+test("a defaulted value does not look like a chosen one", async ({ page }) => {
+  const frame = await open(page);
+
+  // `light` carries a default, so its chip is on — but as a stand-in, not as a
+  // user choice. With no fold left this row is visible from the start, and a
+  // filled chip nobody clicked would read as a preselection.
+  const standIn = frame.locator(".uu-chip", { hasText: "부드럽게" });
+  await expect(standIn).toHaveClass(/is-default/);
+  await expect(standIn).not.toHaveClass(/is-on/);
+
+  // Choosing it yourself is a different state.
+  await standIn.click();
+  await expect(standIn).toHaveClass(/is-on/);
 });
 
 test("touching a chip changes the result", async ({ page }) => {
@@ -212,7 +269,6 @@ test("a delegated line opens its chips in place, not in the list tab", async ({ 
 
 test("a range accepts a value outside its stated bounds", async ({ page }) => {
   const frame = await open(page);
-  await frame.locator(".uu-fold").first().click();
 
   const input = frame.locator(".uu-input-num");
   await input.fill("99999");
@@ -232,13 +288,10 @@ test("a correction button applies its whole set", async ({ page }) => {
 test("tab state survives switching", async ({ page }) => {
   const frame = await open(page);
 
-  await frame.locator(".uu-fold").first().click();
   await frame.locator(".uu-chip", { hasText: "검정" }).click();
   await resultTab(frame).click();
   await frame.locator(".uu-tab", { hasText: "목록" }).click();
 
-  // Still expanded, still selected.
-  await expect(frame.locator(".uu-label").filter({ hasText: "배경" })).toBeVisible();
   await expect(frame.locator(".uu-chip", { hasText: "검정" })).toHaveClass(/is-on/);
 });
 
@@ -273,13 +326,18 @@ test("switches its own chrome to English for an English request", async ({ page 
       unfolded: {
         title: "Launch note",
         intent: "Write a launch announcement",
-        axes: [
+        sections: [
           {
-            id: "tone",
-            label: "Tone",
-            group: "core",
-            type: "select",
-            options: [{ value: "plain", label: "Plain", emit: "Keep the tone plain." }],
+            id: "s",
+            label: "Form",
+            axes: [
+              {
+                id: "tone",
+                label: "Tone",
+                type: "select",
+                options: [{ value: "plain", label: "Plain", emit: "Keep the tone plain." }],
+              },
+            ],
           },
         ],
       },
@@ -308,14 +366,23 @@ test("the map is folded until asked for", async ({ page }) => {
   await expect(frame.locator(".uu-map")).toBeVisible();
 });
 
-test("draws every axis, centred on the request", async ({ page }) => {
+test("draws sections and their axes as two levels", async ({ page }) => {
   const frame = await open(page);
   await frame.locator(".uu-header-btn").click();
 
-  await expect(frame.locator(".uu-node")).toHaveCount(5);
+  await expect(frame.locator(".uu-node.is-section")).toHaveCount(3);
+  await expect(frame.locator(".uu-node.is-axis")).toHaveCount(5);
   await expect(frame.locator(".uu-map-intent")).toContainText("고양이");
-  // core inside, extra outside
-  await expect(frame.locator(".uu-node.is-extra")).toHaveCount(3);
+  await expect(frame.locator(".uu-section-node").first()).toBeVisible();
+});
+
+test("a section reads as touched once anything under it is decided", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await frame.locator(".uu-header-btn").click();
+
+  // `coat` lives in the first section, so that branch goes solid.
+  await expect(frame.locator(".uu-branch").first()).not.toHaveAttribute("stroke-dasharray", /.+/);
 });
 
 test("spokes are solid for decided axes and dashed for undecided ones", async ({ page }) => {
@@ -346,12 +413,10 @@ test("a node moves to its axis in the list instead of editing it", async ({ page
   await expect(frame.locator('.uu-row[data-axis="pose"]')).toBeInViewport();
 });
 
-test("a node inside the fold opens the fold on the way", async ({ page }) => {
+test("a node in any section scrolls to its row", async ({ page }) => {
   const frame = await open(page);
   await frame.locator(".uu-header-btn").click();
 
-  // `bg` is an extra, so its row is not rendered yet.
-  await expect(frame.locator('.uu-row[data-axis="bg"]')).toHaveCount(0);
   await frame.locator('[data-node="bg"] .uu-node-hit').click();
   await expect(frame.locator('.uu-row[data-axis="bg"]')).toBeInViewport();
 });
@@ -382,26 +447,32 @@ const SAMPLE_PAYLOAD = {
     unfolded: {
       title: "요약",
       intent: "회의록을 요약해줘",
-      axes: [
+      sections: [
         {
-          id: "voice",
+          id: "voice-section",
           label: "문체",
-          group: "core",
-          type: "sample",
-          options: [
+          axes: [
             {
-              value: "plain",
-              label: "담백하게",
-              emit: "담백한 문체로 쓴다.",
-              preview: "예산은 3분기까지 동결된다.\n채용은 두 자리만 유지한다.",
+              id: "voice",
+              label: "문체",
+              type: "sample",
+              options: [
+                {
+                  value: "plain",
+                  label: "담백하게",
+                  emit: "담백한 문체로 쓴다.",
+                  preview: "예산은 3분기까지 동결된다.\n채용은 두 자리만 유지한다.",
+                },
+                {
+                  value: "warm",
+                  label: "부드럽게",
+                  emit: "부드러운 문체로 쓴다.",
+                  preview:
+                    "예산은 당분간 그대로 가기로 했습니다.\n채용은 두 자리만 열어두려 합니다.",
+                },
+                { value: "terse", label: "아주 짧게", emit: "아주 짧게 쓴다." },
+              ],
             },
-            {
-              value: "warm",
-              label: "부드럽게",
-              emit: "부드러운 문체로 쓴다.",
-              preview: "예산은 당분간 그대로 가기로 했습니다.\n채용은 두 자리만 열어두려 합니다.",
-            },
-            { value: "terse", label: "아주 짧게", emit: "아주 짧게 쓴다." },
           ],
         },
       ],
@@ -436,13 +507,18 @@ const SYMPTOM_PAYLOAD = {
     unfolded: {
       title: "고양이",
       intent: "고양이 이미지 만들어줘",
-      axes: [
+      sections: [
         {
-          id: "coat",
-          label: "털색",
-          group: "core",
-          type: "select",
-          options: [{ value: "black", label: "검정", emit: "털색은 검은색." }],
+          id: "subject",
+          label: "대상",
+          axes: [
+            {
+              id: "coat",
+              label: "털색",
+              type: "select",
+              options: [{ value: "black", label: "검정", emit: "털색은 검은색." }],
+            },
+          ],
         },
       ],
       symptoms: [
@@ -590,7 +666,6 @@ test("a superseded widget cannot refold either", async ({ page }) => {
 
 test("uses no emoji anywhere in its own chrome", async ({ page }) => {
   const frame = await open(page);
-  await frame.locator(".uu-fold").first().click();
   const list = await frame.locator(".uu-root").innerText();
   await resultTab(frame).click();
   const result = await frame.locator(".uu-root").innerText();

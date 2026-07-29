@@ -6,76 +6,62 @@
  * point — the map answers "what is there and how much of it have I touched",
  * and deciding happens in the list where the values actually live.
  *
- * Core axes ride an inner ring and draw larger, extra axes an outer ring and
- * smaller. Angles are spread across the full circle per ring rather than packed
- * in sequence, so the silhouette stays balanced as the axis count grows — which
- * it will, since extraction is deliberately uncapped.
+ * Two levels: sections branch from the centre, and each section's axes fan out
+ * from it. That mirrors the list exactly — the same grouping, seen at once — and
+ * it is what keeps the shape readable as the axis count grows, which it will,
+ * since extraction is deliberately uncapped.
+ *
+ * A section node draws larger than an axis node. Nothing distinguishes a section
+ * or axis the user added from one the model proposed; the origin is not
+ * something the map has an opinion about.
  *
  * Spoke style follows the icon grammar: solid for a decided axis, dashed for an
  * undecided one.
  */
 
 import type { ResolvedAxis } from "../lib/assemble.js";
+import type { Section } from "../lib/schema.js";
 
 interface MapViewProps {
+  sections: Section[];
   resolved: ResolvedAxis[];
-  /** The request, shown at the centre the axes radiate from. */
+  /** The request, shown at the centre everything radiates from. */
   intent: string;
   onPick: (axisId: string) => void;
   width: number;
 }
 
-const HEIGHT = 300;
-const CORE_RADIUS = 72;
-const EXTRA_RADIUS = 118;
-const CORE_NODE = 5;
-const EXTRA_NODE = 3.5;
+const HEIGHT = 320;
+const SECTION_RADIUS = 66;
+const AXIS_RADIUS = 122;
+const SECTION_NODE = 5;
+const AXIS_NODE = 3.5;
 
-/** Past this many nodes on a ring, labels are clipped hard to stay legible. */
-const CROWDED = 8;
+/** Half-angle each section's axes are allowed to occupy, as a fraction of its slice. */
+const SPREAD = 0.38;
 
 interface Placed {
   axis: ResolvedAxis;
   x: number;
   y: number;
-  /** Where the label sits — pushed out on crowded rings so neighbours clear. */
-  lx: number;
-  ly: number;
   angle: number;
-  radius: number;
-  node: number;
-  crowded: boolean;
 }
 
-/** How far every second label is pushed out when a ring gets tight. */
-const STAGGER = 15;
-
-function place(items: ResolvedAxis[], radius: number, node: number, offset: number): Placed[] {
-  const crowded = items.length > CROWDED;
-
-  return items.map((axis, i) => {
-    // Start at twelve o'clock and go clockwise. The half-step offset on the
-    // outer ring keeps outer nodes from hiding directly behind inner spokes.
-    const angle = (-90 + (360 * (i + offset)) / Math.max(items.length, 1)) * (Math.PI / 180);
-    // Alternating the label radius doubles the arc each one has to itself, which
-    // is what stops neighbouring labels colliding once the ring fills up.
-    const labelRadius = radius + (crowded && i % 2 === 1 ? STAGGER : 0);
-    return {
-      axis,
-      x: Math.cos(angle) * radius,
-      y: Math.sin(angle) * radius,
-      lx: Math.cos(angle) * labelRadius,
-      ly: Math.sin(angle) * labelRadius,
-      angle,
-      radius,
-      node,
-      crowded,
-    };
-  });
+interface PlacedSection {
+  section: Section;
+  x: number;
+  y: number;
+  angle: number;
+  axes: Placed[];
+  /** True when any axis under it has been decided. */
+  touched: boolean;
 }
 
-function clip(label: string, crowded: boolean): string {
-  const max = crowded ? 4 : 9;
+function polar(angle: number, radius: number) {
+  return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+}
+
+function clip(label: string, max: number): string {
   return label.length > max ? `${label.slice(0, max)}…` : label;
 }
 
@@ -107,77 +93,132 @@ function hubLines(intent: string): string[] {
   return out;
 }
 
-export function MapView({ resolved, intent, onPick, width }: MapViewProps) {
-  const core = resolved.filter((r) => r.axis.group === "core");
-  const extra = resolved.filter((r) => r.axis.group !== "core");
+/**
+ * Lay the sections around the circle, then fan each one's axes across its own
+ * slice so an axis always sits visually under the section it belongs to.
+ */
+function place(sections: Section[], byId: Map<string, ResolvedAxis>): PlacedSection[] {
+  const slice = (2 * Math.PI) / Math.max(sections.length, 1);
 
-  const placed = [
-    ...place(core, CORE_RADIUS, CORE_NODE, 0),
-    ...place(extra, EXTRA_RADIUS, EXTRA_NODE, 0.5),
-  ];
+  return sections.map((section, i) => {
+    const angle = -Math.PI / 2 + slice * i;
+    const rows = section.axes.map((a) => byId.get(a.id)).filter(Boolean) as ResolvedAxis[];
 
-  const cx = width / 2;
-  const cy = HEIGHT / 2;
+    const span = slice * SPREAD * 2;
+    const step = rows.length > 1 ? span / (rows.length - 1) : 0;
+    const start = angle - (rows.length > 1 ? span / 2 : 0);
+
+    return {
+      section,
+      ...polar(angle, SECTION_RADIUS),
+      angle,
+      touched: rows.some((r) => r.status !== "unset"),
+      axes: rows.map((axis, j) => {
+        const a = start + step * j;
+        return { axis, ...polar(a, AXIS_RADIUS), angle: a };
+      }),
+    };
+  });
+}
+
+export function MapView({ sections, resolved, intent, onPick, width }: MapViewProps) {
+  const byId = new Map(resolved.map((r) => [r.axis.id, r]));
+  const placed = place(sections, byId);
+
+  const label = (x: number, y: number, angle: number, text: string, cls: string, key: string) => {
+    const outward = Math.cos(angle);
+    const anchor = Math.abs(outward) < 0.25 ? "middle" : outward > 0 ? "start" : "end";
+    const pad = anchor === "middle" ? 0 : outward > 0 ? 9 : -9;
+    const ly = Math.abs(outward) < 0.25 ? (y > 0 ? y + 17 : y - 11) : y + 4;
+    return (
+      <text key={key} className={cls} x={x + pad} y={ly} textAnchor={anchor}>
+        {text}
+      </text>
+    );
+  };
 
   return (
     <svg
       className="uu-map"
       width="100%"
       height={HEIGHT}
-      viewBox={`0 0 ${width} ${HEIGHT}`}
+      viewBox={`0 ${-HEIGHT / 2} ${width} ${HEIGHT}`}
       role="group"
     >
-      <g transform={`translate(${cx} ${cy})`}>
-        {placed.map((p) => {
-          const decided = p.axis.status !== "unset";
-          // Anchor labels away from the centre so text runs outward, not across
-          // the diagram.
-          const outward = Math.cos(p.angle);
-          const anchor = Math.abs(outward) < 0.25 ? "middle" : outward > 0 ? "start" : "end";
-          const pad = anchor === "middle" ? 0 : outward > 0 ? 9 : -9;
-          const labelY = Math.abs(outward) < 0.25 ? (p.ly > 0 ? p.ly + 18 : p.ly - 12) : p.ly + 4;
+      <g transform={`translate(${width / 2} 0)`}>
+        {placed.map((p) => (
+          <g key={p.section.id}>
+            {/* Centre to section. Solid once anything under it is decided. */}
+            <line
+              className={`uu-branch${p.touched ? " is-set" : ""}`}
+              x1={0}
+              y1={0}
+              x2={p.x}
+              y2={p.y}
+              strokeDasharray={p.touched ? undefined : "3 3"}
+            />
 
-          return (
-            <g
-              key={p.axis.axis.id}
-              data-node={p.axis.axis.id}
-              className={`uu-node${decided ? " is-set" : ""}${
-                p.radius === EXTRA_RADIUS ? " is-extra" : ""
-              }`}
-              onClick={() => onPick(p.axis.axis.id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onPick(p.axis.axis.id);
-                }
-              }}
-            >
-              <title>{p.axis.axis.label}</title>
-              <line x1={0} y1={0} x2={p.x} y2={p.y} strokeDasharray={decided ? undefined : "3 3"} />
-              {/* Square, because a node stands for a value (icon grammar). */}
+            {p.axes.map(({ axis, x, y, angle }) => {
+              const decided = axis.status !== "unset";
+              return (
+                <g
+                  key={axis.axis.id}
+                  data-node={axis.axis.id}
+                  className={`uu-node${decided ? " is-set" : ""} is-axis`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onPick(axis.axis.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onPick(axis.axis.id);
+                    }
+                  }}
+                >
+                  <title>{axis.axis.label}</title>
+                  {/* Section to axis, so the grouping is visible as structure. */}
+                  <line
+                    x1={p.x}
+                    y1={p.y}
+                    x2={x}
+                    y2={y}
+                    strokeDasharray={decided ? undefined : "3 3"}
+                  />
+                  {/* Square, because a node stands for a value (icon grammar). */}
+                  <rect
+                    x={x - AXIS_NODE}
+                    y={y - AXIS_NODE}
+                    width={AXIS_NODE * 2}
+                    height={AXIS_NODE * 2}
+                    strokeDasharray={decided ? undefined : "2 2"}
+                    fill={axis.status === "set" ? "currentColor" : "none"}
+                  />
+                  {label(x, y, angle, clip(axis.axis.label, 7), "uu-axis-label", "l")}
+                  {/* The marks are a few px across, too small to hit reliably. */}
+                  <circle className="uu-node-hit" cx={x} cy={y} r={14} />
+                </g>
+              );
+            })}
+
+            <g className={`uu-node is-section${p.touched ? " is-set" : ""}`}>
               <rect
-                x={p.x - p.node}
-                y={p.y - p.node}
-                width={p.node * 2}
-                height={p.node * 2}
-                strokeDasharray={decided ? undefined : "2 2"}
-                fill={p.axis.status === "set" ? "currentColor" : "none"}
+                x={p.x - SECTION_NODE}
+                y={p.y - SECTION_NODE}
+                width={SECTION_NODE * 2}
+                height={SECTION_NODE * 2}
+                strokeDasharray={p.touched ? undefined : "2 2"}
+                fill={p.touched ? "currentColor" : "none"}
               />
-              <text x={p.lx + pad} y={labelY} textAnchor={anchor}>
-                {clip(p.axis.axis.label, p.crowded)}
-              </text>
-              {/* The node marks are 7-10px across, too small to hit reliably.
-                  This transparent disc is the actual target. */}
-              <circle className="uu-node-hit" cx={p.x} cy={p.y} r={15} />
+              {p.section.label
+                ? label(p.x, p.y, p.angle, clip(p.section.label, 6), "uu-section-node", "s")
+                : null}
             </g>
-          );
-        })}
+          </g>
+        ))}
 
         {/* The request, at the centre everything radiates from. Drawn last so
-            the spokes pass behind it. */}
-        <circle className="uu-map-hub" r={CORE_RADIUS * 0.62} />
+            the branches pass behind it. */}
+        <circle className="uu-map-hub" r={SECTION_RADIUS * 0.6} />
         <text className="uu-map-intent" textAnchor="middle">
           {hubLines(intent).map((line, i, all) => (
             <tspan key={line} x={0} y={(i - (all.length - 1) / 2) * 14 + 4}>
