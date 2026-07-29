@@ -65,7 +65,7 @@ export function SampleCards({
       {onRefresh ? (
         <button
           type="button"
-          className="uu-refresh"
+          className="uu-refresh uu-preview"
           onClick={onRefresh}
           disabled={refreshing}
         >

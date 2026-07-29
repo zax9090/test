@@ -26,6 +26,9 @@ interface AxisListProps {
   onFreeform: (value: string) => void;
   source: string;
   onSource: (value: string) => void;
+  /** Absent when the host will not lend a model, so there is nothing to offer. */
+  onRefold?: () => void;
+  refolding: boolean;
   extrasOpen: boolean;
   onToggleExtras: () => void;
   t: Strings;
@@ -43,6 +46,8 @@ export function AxisList({
   onFreeform,
   source,
   onSource,
+  onRefold,
+  refolding,
   extrasOpen,
   onToggleExtras,
   t,
@@ -135,6 +140,23 @@ export function AxisList({
             rows={2}
             onChange={(e) => onSource(e.target.value)}
           />
+          {/*
+            Offered only once the box holds something the axes were not built
+            from. The brief has the extractor fit axes to the material, and
+            material can arrive long after the first pass — but re-extracting is
+            the user's call, not something to fire on every keystroke.
+          */}
+          {onRefold ? (
+            <button
+              type="button"
+              className="uu-refresh uu-refold"
+              onClick={onRefold}
+              disabled={refolding}
+            >
+              <Icon name="i-set" />
+              <span>{refolding ? t.refolding : t.refold}</span>
+            </button>
+          ) : null}
         </div>
         <div className="uu-status" />
       </div>

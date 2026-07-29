@@ -22,7 +22,6 @@ import { z } from "zod";
 import { buildPreviewPrompt, clampSource } from "../lib/prompt.js";
 import { extractJson, type Axis } from "../lib/schema.js";
 import { requestStore } from "../lib/store.js";
-import { WIDGET_URI } from "../resources/widget.js";
 import type { Env } from "../env.js";
 
 const MAX_TOKENS = 1_500;
@@ -76,14 +75,10 @@ export function registerPreview(server: McpServer, env: Env): void {
         "user presses its preview button. Not for direct use.",
       inputSchema,
       annotations: { title: "Preview a direction", readOnlyHint: true, openWorldHint: false },
-      _meta: {
-        ui: {
-          resourceUri: WIDGET_URI,
-          // Keeps it out of the model's tool list entirely, so it cannot be
-          // called on the user's behalf without them pressing anything.
-          visibility: ["app"],
-        },
-      },
+      // No resourceUri: the result goes back to the widget that asked, not to
+      // the conversation. `visibility` keeps it out of the model's tool list so
+      // it cannot be called on the user's behalf without them pressing anything.
+      _meta: { ui: { visibility: ["app"] } },
     },
     async ({ requestId, axisId, source }) => {
       const empty: PreviewResult = { axisId, samples: {} };

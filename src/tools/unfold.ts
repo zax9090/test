@@ -91,13 +91,14 @@ export interface UnfoldPayload {
    */
   source?: string;
   /**
-   * Whether `preview` can actually write anything on this host.
+   * Whether the host will lend its model.
    *
-   * It needs a model, and the only one it may use is the host's via sampling.
-   * Where that is missing the tool returns nothing by design (C8) — so the
-   * widget hides the button rather than offering one that never responds.
+   * `preview` and `refold` both need one, and the only one they may use is the
+   * host's via sampling. Where that is missing both return nothing by design
+   * (C8) — so the widget hides those actions rather than offering buttons that
+   * cannot respond.
    */
-  canPreview: boolean;
+  canSample: boolean;
 }
 
 /**
@@ -123,7 +124,7 @@ async function finalize(
     unfolded,
     requestId,
     locale: detectLocale(request),
-    canPreview: Boolean(server.server.getClientCapabilities()?.sampling),
+    canSample: Boolean(server.server.getClientCapabilities()?.sampling),
     ...(source ? { source } : {}),
   };
 }

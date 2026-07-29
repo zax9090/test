@@ -19,6 +19,8 @@ declare global {
     __payload: unknown;
     /** Canned `preview` reply. `null` makes the call fail, for the silent path. */
     __previewReply: Record<string, string> | null;
+    /** Canned `refold` reply. `null` makes the call fail. */
+    __refoldReply: unknown;
     /** Held open until released, to observe what the widget shows mid-flight. */
     __holdPreview: boolean;
   }
@@ -29,6 +31,7 @@ window.__harness = { sent: [], toolCalls: [], ready: false };
 // Defaults only. A test's init script runs before this file, so overwriting
 // unconditionally would wipe whatever it set up.
 if (!("__previewReply" in window)) window.__previewReply = null;
+if (!("__refoldReply" in window)) window.__refoldReply = null;
 if (!("__holdPreview" in window)) window.__holdPreview = false;
 
 const iframe = document.createElement("iframe");
@@ -71,6 +74,15 @@ iframe.addEventListener("load", async () => {
 
     while (window.__holdPreview) {
       await new Promise((r) => setTimeout(r, 20));
+    }
+
+    if (name === "refold") {
+      if (window.__refoldReply === null) throw new Error("no refold available");
+      const payload = { unfolded: window.__refoldReply };
+      return {
+        content: [{ type: "text", text: JSON.stringify(payload) }],
+        structuredContent: payload,
+      };
     }
 
     if (name !== "preview" || window.__previewReply === null) {

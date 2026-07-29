@@ -40,7 +40,7 @@ interface Payload {
   requestId?: string;
   locale?: Locale;
   source?: string;
-  canPreview?: boolean;
+  canSample?: boolean;
 }
 
 /**
@@ -108,6 +108,7 @@ function App() {
   // Folded by default; the header is what shows until it is opened.
   const [mapOpen, setMapOpen] = useState(false);
   const [previewing, setPreviewing] = useState<string | null>(null);
+  const [refolding, setRefolding] = useState(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const width = useWidth(rootRef);
@@ -209,6 +210,38 @@ function App() {
     [app, payload?.requestId, previewing, source],
   );
 
+  /**
+   * Re-extract the axes around material added since the first pass.
+   *
+   * Selections are deliberately kept. Axis ids that survive keep their values,
+   * and ones that no longer exist are simply ignored — the assembly engine
+   * treats an unknown id as untouched rather than throwing, which is exactly
+   * what makes it safe to swap the axis set underneath a half-filled widget.
+   *
+   * Returning nothing changes nothing, quietly, as everywhere else.
+   */
+  const runRefold = useCallback(async () => {
+    if (!app || !payload?.requestId || refolding) return;
+    setRefolding(true);
+
+    try {
+      const result = await app.callServerTool({
+        name: "refold",
+        arguments: { requestId: payload.requestId, source },
+      });
+
+      const next = (result.structuredContent as { unfolded?: Unfolded } | undefined)?.unfolded;
+      if (!next?.axes?.length) return;
+
+      setPayload((prev) => (prev ? { ...prev, unfolded: next, source } : prev));
+      setExtrasOpen(false);
+    } catch {
+      // Keep the axes already on screen.
+    } finally {
+      setRefolding(false);
+    }
+  }, [app, payload?.requestId, refolding, source]);
+
   const handleCopy = useCallback(async () => {
     const ok = await copyText(text);
     if (ok) setCopied(true);
@@ -306,7 +339,7 @@ function App() {
         <AxisList
           resolved={resolved}
           onChange={setAxis}
-          {...(app && payload.requestId && payload.canPreview && !superseded
+          {...(app && payload.requestId && payload.canSample && !superseded
             ? { onPreview: runPreview }
             : {})}
           previewing={previewing}
@@ -317,6 +350,11 @@ function App() {
           onFreeform={setFreeform}
           source={source}
           onSource={setSource}
+          {...(app && payload.requestId && payload.canSample && !superseded && source.trim()
+          && source.trim() !== (payload.source ?? "").trim()
+            ? { onRefold: runRefold }
+            : {})}
+          refolding={refolding}
           extrasOpen={extrasOpen}
           onToggleExtras={() => setExtrasOpen((v) => !v)}
           t={t}

@@ -30,6 +30,8 @@ export interface Strings {
   clear: string;
   preview: string;
   previewing: string;
+  refold: string;
+  refolding: string;
   outOfRange: (min: string, max: string) => string;
 }
 
@@ -53,6 +55,8 @@ const ko: Strings = {
   clear: "해제",
   preview: "미리보기",
   previewing: "쓰는 중",
+  refold: "이 자료로 다시 펼치기",
+  refolding: "펼치는 중",
   outOfRange: (min, max) => `보통 ${min}~${max} 범위입니다`,
 };
 
@@ -76,6 +80,8 @@ const en: Strings = {
   clear: "Clear",
   preview: "Preview",
   previewing: "Writing",
+  refold: "Refold around this",
+  refolding: "Refolding",
   outOfRange: (min, max) => `Usually between ${min} and ${max}`,
 };
 

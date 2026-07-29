@@ -381,7 +381,7 @@ const SAMPLE_PAYLOAD = {
   structuredContent: {
     locale: "ko",
     requestId: "req-1",
-    canPreview: true,
+    canSample: true,
     unfolded: {
       title: "요약",
       intent: "회의록을 요약해줘",
@@ -448,7 +448,7 @@ test("preview only runs when its button is pressed", async ({ page }) => {
     .poll(() => page.evaluate(() => window.__harness.toolCalls.length))
     .toBe(0);
 
-  await frame.locator(".uu-refresh").click();
+  await frame.locator(".uu-preview").click();
   await expect.poll(() => page.evaluate(() => window.__harness.toolCalls.length)).toBe(1);
 
   const call = await page.evaluate(() => window.__harness.toolCalls[0]);
@@ -462,7 +462,7 @@ test("fresh samples replace the old ones", async ({ page }) => {
     reply: { plain: "새로 쓴 담백한 샘플.", warm: "새로 쓴 부드러운 샘플." },
   });
 
-  await frame.locator(".uu-refresh").click();
+  await frame.locator(".uu-preview").click();
   await expect(frame.locator(".uu-card").first()).toContainText("새로 쓴 담백한 샘플.");
   await expect(frame.locator(".uu-card").nth(1)).toContainText("새로 쓴 부드러운 샘플.");
 });
@@ -470,11 +470,11 @@ test("fresh samples replace the old ones", async ({ page }) => {
 test("the cards stay put while new text is being written", async ({ page }) => {
   const frame = await openSamples(page, { reply: { plain: "나중에 도착." }, hold: true });
 
-  await frame.locator(".uu-refresh").click();
+  await frame.locator(".uu-preview").click();
 
   // Mid-flight: old text still there, no skeleton, no spinner, nothing blank.
   await expect(frame.locator(".uu-card").first()).toContainText("예산은 3분기까지 동결된다.");
-  await expect(frame.locator(".uu-refresh")).toBeDisabled();
+  await expect(frame.locator(".uu-preview")).toBeDisabled();
   await expect(frame.locator(".uu-cards")).toBeVisible();
 
   await page.evaluate(() => {
@@ -486,12 +486,12 @@ test("the cards stay put while new text is being written", async ({ page }) => {
 test("a failed preview says nothing and loses nothing", async ({ page }) => {
   const frame = await openSamples(page, { reply: null });
 
-  await frame.locator(".uu-refresh").click();
+  await frame.locator(".uu-preview").click();
   await expect.poll(() => page.evaluate(() => window.__harness.toolCalls.length)).toBe(1);
 
   // Old cards intact, button usable again, and no banner anywhere.
   await expect(frame.locator(".uu-card").first()).toContainText("예산은 3분기까지 동결된다.");
-  await expect(frame.locator(".uu-refresh")).toBeEnabled();
+  await expect(frame.locator(".uu-preview")).toBeEnabled();
   const text = await frame.locator(".uu-root").innerText();
   expect(text).not.toMatch(/실패|오류|에러|error|failed/i);
 });
@@ -500,7 +500,7 @@ test("the current source box is what preview is grounded in", async ({ page }) =
   const frame = await openSamples(page, { reply: { plain: "x" } });
 
   await frame.locator(".uu-textarea").fill("나중에 붙여넣은 회의록");
-  await frame.locator(".uu-refresh").click();
+  await frame.locator(".uu-preview").click();
   await expect.poll(() => page.evaluate(() => window.__harness.toolCalls.length)).toBe(1);
 
   const call = await page.evaluate(() => window.__harness.toolCalls[0]);
@@ -514,7 +514,7 @@ const SYMPTOM_PAYLOAD = {
   structuredContent: {
     locale: "ko",
     requestId: "req-s",
-    canPreview: false,
+    canSample: false,
     unfolded: {
       title: "고양이",
       intent: "고양이 이미지 만들어줘",
@@ -582,13 +582,13 @@ test("material given with the request shows up in the box and the prompt", async
 test("no preview button on a host that cannot write one", async ({ page }) => {
   const frame = await open(page, {
     ...SAMPLE_PAYLOAD,
-    structuredContent: { ...SAMPLE_PAYLOAD.structuredContent, canPreview: false },
+    structuredContent: { ...SAMPLE_PAYLOAD.structuredContent, canSample: false },
   });
 
   // The cards are still there and still choosable — only the button that would
   // never respond is gone.
   await expect(frame.locator(".uu-card")).toHaveCount(3);
-  await expect(frame.locator(".uu-refresh")).toHaveCount(0);
+  await expect(frame.locator(".uu-preview")).toHaveCount(0);
 });
 
 // ── supersession ───────────────────────────────────────────────────────────
@@ -622,6 +622,97 @@ test("an earlier announcement does not silence a newer widget", async ({ page })
   });
 
   await expect(frame.locator(".uu-btn", { hasText: "대화로 보내기" })).toBeVisible();
+});
+
+// ── refold ─────────────────────────────────────────────────────────────────
+
+const REFOLDED = {
+  title: "회의록",
+  intent: "회의록을 요약해줘",
+  axes: [
+    {
+      id: "coat",
+      label: "털색",
+      group: "core",
+      type: "select",
+      options: [{ value: "black", label: "검정", emit: "털색은 검은색으로 한다." }],
+    },
+    {
+      id: "speaker",
+      label: "발언자",
+      group: "core",
+      type: "select",
+      options: [{ value: "keep", label: "유지", emit: "발언자를 표기한다." }],
+    },
+  ],
+};
+
+async function openRefoldable(page, { reply = REFOLDED } = {}) {
+  await page.addInitScript((r) => {
+    window.__refoldReply = r;
+  }, reply);
+  return open(page, {
+    content: [{ type: "text", text: "{}" }],
+    structuredContent: { ...PAYLOAD.structuredContent, canSample: true, requestId: "req-r" },
+  });
+}
+
+test("refold is offered only once the box holds something new", async ({ page }) => {
+  const frame = await openRefoldable(page);
+
+  // Nothing pasted yet, so there is nothing to refold around.
+  await expect(frame.locator(".uu-refold")).toHaveCount(0);
+
+  await frame.locator(".uu-textarea").fill("예산 동결 논의 회의록");
+  await expect(frame.locator(".uu-refold")).toBeVisible();
+});
+
+test("refold replaces the axes in place, without a second widget", async ({ page }) => {
+  const frame = await openRefoldable(page);
+  await frame.locator(".uu-textarea").fill("예산 동결 논의 회의록");
+  await frame.locator(".uu-refold").click();
+
+  await expect(frame.locator(".uu-label").filter({ hasText: "발언자" })).toBeVisible();
+  // The axes that were there and are not in the new set are gone.
+  await expect(frame.locator(".uu-label").filter({ hasText: "자세" })).toHaveCount(0);
+
+  const call = await page.evaluate(() => window.__harness.toolCalls.at(-1));
+  expect(call.name).toBe("refold");
+  expect(call.arguments.source).toBe("예산 동결 논의 회의록");
+});
+
+test("refold keeps choices whose axis survived", async ({ page }) => {
+  const frame = await openRefoldable(page);
+
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await expect(prompt(frame)).toContainText("털색은 검은색으로 한다.");
+
+  await frame.locator(".uu-textarea").fill("회의록 본문");
+  await frame.locator(".uu-refold").click();
+  await expect(frame.locator(".uu-label").filter({ hasText: "발언자" })).toBeVisible();
+
+  // `coat` survived the refold, so the value the user picked is still applied.
+  await expect(prompt(frame)).toContainText("털색은 검은색으로 한다.");
+  await expect(frame.locator(".uu-chip", { hasText: "검정" })).toHaveClass(/is-on/);
+});
+
+test("a refold that returns nothing changes nothing", async ({ page }) => {
+  const frame = await openRefoldable(page, { reply: null });
+
+  await frame.locator(".uu-textarea").fill("회의록 본문");
+  await frame.locator(".uu-refold").click();
+  await expect.poll(() => page.evaluate(() => window.__harness.toolCalls.length)).toBe(1);
+
+  await expect(frame.locator(".uu-label").filter({ hasText: "자세" })).toBeVisible();
+  await expect(frame.locator(".uu-refold")).toBeEnabled();
+  const text = await frame.locator(".uu-root").innerText();
+  expect(text).not.toMatch(/실패|오류|에러|error|failed/i);
+});
+
+test("no refold on a host that will not lend a model", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-textarea").fill("회의록 본문");
+  await expect(frame.locator(".uu-refold")).toHaveCount(0);
 });
 
 test("uses no emoji anywhere in its own chrome", async ({ page }) => {

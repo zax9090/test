@@ -74,7 +74,7 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
   check("drops the malformed axis", !payload.unfolded.axes.some((a) => a.id === "broken"));
   check("detects the locale", payload?.locale === "ko");
   check("mints a requestId", typeof payload?.requestId === "string");
-  check("reports preview as unavailable here", payload?.canPreview === false);
+  check("reports preview as unavailable here", payload?.canSample === false);
 
   // The resource the tool points at must exist and be MCP-Apps flavoured HTML.
   const res = await client.readResource({ uri: "ui://unknown-unknowns/widget.html" });
@@ -178,7 +178,7 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
     arguments: { request: "회의록을 요약해줘", source: "예산 동결 결정." },
   });
   check("stored the sample axis", unfolded.structuredContent.unfolded.axes[0]?.type === "sample");
-  check("reports preview as available here", unfolded.structuredContent.canPreview === true);
+  check("reports preview as available here", unfolded.structuredContent.canSample === true);
   check("hands the source back for the widget's box", unfolded.structuredContent.source === "예산 동결 결정.");
   const requestId = unfolded.structuredContent.requestId;
 
@@ -199,6 +199,74 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
   check("expired request returns nothing, quietly", Object.keys(stale.structuredContent.samples).length === 0);
   check("and is not an error", stale.isError !== true);
 
+  await client.close();
+}
+
+// ── refold ─────────────────────────────────────────────────────────────────
+{
+  const AXES_A = JSON.stringify({
+    title: "a", intent: "회의록을 요약해줘",
+    axes: [{ id: "len", label: "분량", group: "core", type: "select",
+      options: [{ value: "s", label: "짧게", emit: "짧게 쓴다." }] }],
+  });
+  const AXES_B = JSON.stringify({
+    title: "b", intent: "회의록을 요약해줘",
+    axes: [
+      { id: "len", label: "분량", group: "core", type: "select",
+        options: [{ value: "s", label: "짧게", emit: "짧게 쓴다." }] },
+      { id: "speaker", label: "발언자", group: "core", type: "select",
+        options: [{ value: "keep", label: "유지", emit: "발언자를 표기한다." }] },
+    ],
+  });
+
+  let sawSource = "";
+  let calls = 0;
+  const client = await connect({ sampling: {} }, async (req) => {
+    calls++;
+    const text = req.params.messages[0].content.text;
+    const m = text.match(/Source material:\n([\s\S]*?)(\n\n|$)/);
+    if (m) sawSource = m[1].trim();
+    return { model: "fake", role: "assistant",
+      content: { type: "text", text: calls === 1 ? AXES_A : AXES_B } };
+  });
+
+  console.log("\n=== refold ===");
+  const { tools } = await client.listTools();
+  const refold = tools.find((t) => t.name === "refold");
+  check("declared app-only", JSON.stringify(refold?._meta?.ui?.visibility) === '["app"]');
+  check("renders no widget of its own", refold?._meta?.ui?.resourceUri === undefined);
+
+  const first = await client.callTool({
+    name: "unfold", arguments: { request: "회의록을 요약해줘" },
+  });
+  const requestId = first.structuredContent.requestId;
+  check("starts with one axis", first.structuredContent.unfolded.axes.length === 1);
+
+  const again = await client.callTool({
+    name: "refold", arguments: { requestId, source: "예산 동결 논의. 발언자 3명." },
+  });
+  check("re-extracts around the new material", again.structuredContent.unfolded?.axes?.length === 2);
+  check("the material reached the model", /발언자 3명/.test(sawSource));
+
+  // The refreshed store is what a later preview must work from.
+  const stale = await client.callTool({
+    name: "refold", arguments: { requestId: "no-such-request", source: "x" },
+  });
+  check("unknown request returns nothing, quietly", stale.structuredContent.unfolded === undefined);
+  check("and is not an error", stale.isError !== true);
+
+  await client.close();
+}
+
+// ── refold without sampling: nothing, and no error ─────────────────────────
+{
+  const client = await connect({});
+  const r = await client.callTool({
+    name: "refold", arguments: { requestId: "anything", source: "자료" },
+  });
+  console.log("\n=== refold, no sampling ===");
+  check("returns nothing", r.structuredContent.unfolded === undefined);
+  check("still not an error", r.isError !== true);
   await client.close();
 }
 
