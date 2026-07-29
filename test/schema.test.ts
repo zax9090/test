@@ -12,20 +12,34 @@
 
 import { describe, expect, it } from "vitest";
 
-import { extractJson, fallbackUnfolded, parseUnfolded } from "../src/lib/schema.js";
+import { allAxes, extractJson, fallbackUnfolded, parseUnfolded } from "../src/lib/schema.js";
 import { assemble } from "../src/lib/assemble.js";
 
 const axis = (over: Record<string, unknown> = {}) => ({
   id: "coat",
   label: "털색",
-  group: "core",
   type: "select",
   options: [{ value: "black", label: "검정", emit: "털색은 검은색." }],
   ...over,
 });
 
-const payload = (over: Record<string, unknown> = {}) =>
-  JSON.stringify({ title: "t", intent: "고양이", axes: [axis()], ...over });
+const section = (axes: unknown[], over: Record<string, unknown> = {}) => ({
+  id: "subject",
+  label: "대상",
+  axes,
+  ...over,
+});
+
+/** A well-formed payload. `axes` swaps the axes inside the single section. */
+const payload = (over: Record<string, unknown> = {}) => {
+  const { axes, ...rest } = over as { axes?: unknown[] };
+  return JSON.stringify({
+    title: "t",
+    intent: "고양이",
+    sections: [section(axes ?? [axis()])],
+    ...rest,
+  });
+};
 
 describe("extractJson", () => {
   it("reads a bare object", () => {
@@ -51,28 +65,31 @@ describe("extractJson", () => {
 
 describe("parseUnfolded — salvage", () => {
   it("keeps the good axes and drops only the broken one", () => {
-    const raw = JSON.stringify({
-      title: "t",
-      intent: "고양이",
+    const raw = payload({
       axes: [
         axis(),
-        { id: "nolabel", group: "extra", type: "select", options: [] },
+        { id: "nolabel", type: "select", options: [] },
         axis({ id: "pose", label: "자세" }),
       ],
     });
     const parsed = parseUnfolded(raw, "고양이")!;
-    expect(parsed.axes.map((a) => a.id)).toEqual(["coat", "pose"]);
+    expect(allAxes(parsed).map((a) => a.id)).toEqual(["coat", "pose"]);
   });
 
   it("returns null when nothing survives, so the caller can retry", () => {
-    expect(parseUnfolded('{"axes":[]}', "고양이")).toBeNull();
+    expect(parseUnfolded('{"sections":[]}', "고양이")).toBeNull();
     expect(parseUnfolded("not json", "고양이")).toBeNull();
-    expect(parseUnfolded('{"no":"axes"}', "고양이")).toBeNull();
-    expect(parseUnfolded('{"axes":"wrong type"}', "고양이")).toBeNull();
+    expect(parseUnfolded('{"no":"sections"}', "고양이")).toBeNull();
+    expect(parseUnfolded('{"sections":"wrong type"}', "고양이")).toBeNull();
+    // A section whose axes all fail leaves nothing behind.
+    expect(parseUnfolded('{"sections":[{"label":"대상","axes":[{}]}]}', "고양이")).toBeNull();
   });
 
   it("falls back to the request when intent is missing", () => {
-    const parsed = parseUnfolded(JSON.stringify({ axes: [axis()] }), "  고양이 그려줘  ")!;
+    const parsed = parseUnfolded(
+      JSON.stringify({ sections: [section([axis()])] }),
+      "  고양이 그려줘  ",
+    )!;
     expect(parsed.intent).toBe("고양이 그려줘");
     expect(parsed.title).toBe("고양이 그려줘");
   });
@@ -82,7 +99,7 @@ describe("parseUnfolded — salvage", () => {
       axes: [axis({ options: [{ value: "black", label: "검정" }] })],
     });
     const parsed = parseUnfolded(raw, "고양이")!;
-    expect(parsed.axes[0]!.options![0]!.emit).toBe("검정");
+    expect(allAxes(parsed)[0]!.options![0]!.emit).toBe("검정");
   });
 
   it("drops an option with neither label nor value", () => {
@@ -91,7 +108,66 @@ describe("parseUnfolded — salvage", () => {
         axis({ options: [{ emit: "떠돌이 문장" }, { value: "black", label: "검정", emit: "e" }] }),
       ],
     });
-    expect(parseUnfolded(raw, "고양이")!.axes[0]!.options).toHaveLength(1);
+    expect(allAxes(parseUnfolded(raw, "고양이")!)[0]!.options).toHaveLength(1);
+  });
+});
+
+describe("parseUnfolded — sections", () => {
+  it("keeps the sections and their order", () => {
+    const raw = JSON.stringify({
+      intent: "고양이",
+      sections: [
+        { id: "subject", label: "대상", axes: [axis()] },
+        { id: "frame", label: "화면", axes: [axis({ id: "ratio", label: "비율" })] },
+      ],
+    });
+    const parsed = parseUnfolded(raw, "고양이")!;
+    expect(parsed.sections.map((s) => s.label)).toEqual(["대상", "화면"]);
+    expect(allAxes(parsed).map((a) => a.id)).toEqual(["coat", "ratio"]);
+  });
+
+  it("drops a section with no label or no surviving axes, keeping the rest", () => {
+    const raw = JSON.stringify({
+      intent: "고양이",
+      sections: [
+        { id: "nameless", axes: [axis()] },
+        { id: "empty", label: "빈", axes: [] },
+        { id: "frame", label: "화면", axes: [axis({ id: "ratio", label: "비율" })] },
+      ],
+    });
+    expect(parseUnfolded(raw, "고양이")!.sections.map((s) => s.id)).toEqual(["frame"]);
+  });
+
+  it("gathers a flat axes payload into one unnamed section rather than rejecting it", () => {
+    // An older model, or one that skimmed the instruction. The grouping is lost;
+    // the widget is not.
+    const raw = JSON.stringify({ intent: "고양이", axes: [axis()] });
+    const parsed = parseUnfolded(raw, "고양이")!;
+    expect(parsed.sections).toHaveLength(1);
+    expect(parsed.sections[0]!.label).toBe("");
+    expect(allAxes(parsed)).toHaveLength(1);
+  });
+
+  it("makes axis ids distinct across sections, not just within one", () => {
+    const raw = JSON.stringify({
+      intent: "고양이",
+      sections: [
+        { id: "a", label: "가", axes: [axis()] },
+        { id: "a", label: "나", axes: [axis()] },
+      ],
+    });
+    const parsed = parseUnfolded(raw, "고양이")!;
+    const axisIds = allAxes(parsed).map((a) => a.id);
+    expect(new Set(axisIds).size).toBe(axisIds.length);
+    expect(new Set(parsed.sections.map((s) => s.id)).size).toBe(2);
+  });
+
+  it("keeps a user-added section marked as such", () => {
+    const raw = JSON.stringify({
+      intent: "고양이",
+      sections: [{ id: "mine", label: "내 묶음", origin: "user", axes: [axis()] }],
+    });
+    expect(parseUnfolded(raw, "고양이")!.sections[0]!.origin).toBe("user");
   });
 });
 
@@ -99,48 +175,36 @@ describe("parseUnfolded — type repair", () => {
   it("infers select when the type is missing or unknown", () => {
     for (const type of [undefined, "dropdown", 42]) {
       const parsed = parseUnfolded(payload({ axes: [axis({ type })] }), "고양이")!;
-      expect(parsed.axes[0]!.type).toBe("select");
+      expect(allAxes(parsed)[0]!.type).toBe("select");
     }
   });
 
   it("infers range when a usable range block is present", () => {
     const raw = payload({
-      axes: [
-        {
-          id: "w",
-          label: "가로",
-          group: "core",
-          range: { unit: "px", emitTemplate: "가로 {value}px." },
-        },
-      ],
+      axes: [{ id: "w", label: "가로", range: { unit: "px", emitTemplate: "가로 {value}px." } }],
     });
-    expect(parseUnfolded(raw, "고양이")!.axes[0]!.type).toBe("range");
+    expect(allAxes(parseUnfolded(raw, "고양이")!)[0]!.type).toBe("range");
   });
 
   it("does not leave a range axis that has no template — it would render dead", () => {
     const raw = payload({
       axes: [axis({ type: "range", range: { unit: "px" } })],
     });
-    const parsed = parseUnfolded(raw, "고양이")!;
-    expect(parsed.axes[0]!.type).toBe("select");
-    expect(parsed.axes[0]!.range).toBeUndefined();
+    const parsed = allAxes(parseUnfolded(raw, "고양이")!)[0]!;
+    expect(parsed.type).toBe("select");
+    expect(parsed.range).toBeUndefined();
   });
 
   it("keeps a sample axis even with no options to show yet", () => {
     const raw = payload({ axes: [axis({ id: "voice", type: "sample", options: [] })] });
-    expect(parseUnfolded(raw, "고양이")!.axes[0]!.type).toBe("sample");
-  });
-
-  it("treats an unknown group as extra", () => {
-    const raw = payload({ axes: [axis({ group: "important" })] });
-    expect(parseUnfolded(raw, "고양이")!.axes[0]!.group).toBe("extra");
+    expect(allAxes(parseUnfolded(raw, "고양이")!)[0]!.type).toBe("sample");
   });
 });
 
 describe("parseUnfolded — ids", () => {
   it("makes duplicate ids distinct so two rows cannot share one slot", () => {
     const raw = payload({ axes: [axis(), axis({ label: "털색2" })] });
-    const ids = parseUnfolded(raw, "고양이")!.axes.map((a) => a.id);
+    const ids = allAxes(parseUnfolded(raw, "고양이")!).map((a) => a.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -151,7 +215,7 @@ describe("parseUnfolded — ids", () => {
     });
     const parsed = parseUnfolded(raw, "고양이")!;
 
-    expect(parsed.axes[0]!.id).toBe("bg");
+    expect(allAxes(parsed)[0]!.id).toBe("bg");
     expect(assemble(parsed, { selections: parsed.fixes![0]!.set })).toContain("털색은 검은색.");
   });
 
@@ -159,7 +223,7 @@ describe("parseUnfolded — ids", () => {
     const raw = payload({
       axes: [{ label: "털색", group: "core", options: [{ value: "b", label: "검정", emit: "e" }] }],
     });
-    expect(parseUnfolded(raw, "고양이")!.axes[0]!.id).toBe("axis-0");
+    expect(allAxes(parseUnfolded(raw, "고양이")!)[0]!.id).toBe("axis-0");
   });
 });
 
@@ -202,9 +266,10 @@ describe("parseUnfolded — hostile input", () => {
       "[]",
       '"a string"',
       "123",
-      '{"axes":[null,1,"x",[],{}]}',
-      '{"axes":[{"label":"a","options":[null,1,"x"]}]}',
-      '{"intent":123,"title":{},"axes":[{"label":"a","options":[{"value":"v","label":"l","emit":"e"}]}]}',
+      '{"sections":[null,1,"x",[],{}]}',
+      '{"sections":[{"label":"s","axes":[null,1,"x"]}]}',
+      '{"sections":[{"label":"s"}]}',
+      '{"intent":123,"title":{},"sections":[{"label":"s","axes":[{"label":"a","options":[{"value":"v","label":"l","emit":"e"}]}]}]}',
       '{"axes":[{"label":"a","default":{},"options":[{"value":"v","label":"l","emit":"e"}]}]}',
     ];
     for (const raw of nasty) {
@@ -214,24 +279,24 @@ describe("parseUnfolded — hostile input", () => {
 
   it("ignores a default that is not a string or number", () => {
     const raw = payload({ axes: [axis({ default: { nope: true } })] });
-    expect(parseUnfolded(raw, "고양이")!.axes[0]!.default).toBeUndefined();
+    expect(allAxes(parseUnfolded(raw, "고양이")!)[0]!.default).toBeUndefined();
   });
 
   it("accepts an object as readily as a string", () => {
     const parsed = parseUnfolded(JSON.parse(payload()) as unknown, "고양이")!;
-    expect(parsed.axes).toHaveLength(1);
+    expect(allAxes(parsed)).toHaveLength(1);
   });
 });
 
 describe("fallbackUnfolded", () => {
   it("matches the request's language", () => {
-    expect(fallbackUnfolded("고양이 그려줘").axes[0]!.label).toBe("목적");
-    expect(fallbackUnfolded("draw a cat").axes[0]!.label).toBe("Purpose");
+    expect(allAxes(fallbackUnfolded("고양이 그려줘"))[0]!.label).toBe("목적");
+    expect(allAxes(fallbackUnfolded("draw a cat"))[0]!.label).toBe("Purpose");
   });
 
   it("marks nothing as common, since a usual value across all tasks is a guess", () => {
     for (const request of ["고양이 그려줘", "draw a cat"]) {
-      const options = fallbackUnfolded(request).axes.flatMap((a) => a.options ?? []);
+      const options = allAxes(fallbackUnfolded(request)).flatMap((a) => a.options ?? []);
       expect(options.some((o) => o.common)).toBe(false);
     }
   });
@@ -241,9 +306,10 @@ describe("fallbackUnfolded", () => {
     expect(assemble(u, { selections: {} })).toBe("draw a cat");
   });
 
-  it("gives three core axes and keeps the rest folded away", () => {
+  it("arrives as one unnamed section — there is no task to name groups after", () => {
     const u = fallbackUnfolded("draw a cat");
-    expect(u.axes.filter((a) => a.group === "core")).toHaveLength(3);
-    expect(u.axes.filter((a) => a.group === "extra")).toHaveLength(2);
+    expect(u.sections).toHaveLength(1);
+    expect(u.sections[0]!.label).toBe("");
+    expect(allAxes(u)).toHaveLength(5);
   });
 });

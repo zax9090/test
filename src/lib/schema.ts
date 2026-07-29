@@ -42,7 +42,6 @@ export interface AxisRange {
 export interface Axis {
   id: string;
   label: string;
-  group: "core" | "extra";
   type: "select" | "multi" | "range" | "sample";
   options?: Option[];
   range?: AxisRange;
@@ -50,6 +49,23 @@ export interface Axis {
   norm?: string;
   /** When present the value is applied on the user's behalf. */
   default?: string | number | null;
+}
+
+/**
+ * A named group of axes.
+ *
+ * Replaces the old core/extra split. Importance was a judgement the model made
+ * on the user's behalf, and what matters depends on their situation — whereas
+ * what an axis is *about* is a property of the axis. Three or four named groups
+ * also cut the number of things to scan from eleven to four, which the fold was
+ * only ever a workaround for.
+ */
+export interface Section {
+  id: string;
+  /** A short noun phrase. "Subject", not "the subject of the image". */
+  label: string;
+  axes: Axis[];
+  origin?: "model" | "user";
 }
 
 export interface Fix {
@@ -67,9 +83,14 @@ export interface Unfolded {
   title: string;
   /** The user's request, possibly tidied. */
   intent: string;
-  axes: Axis[];
+  sections: Section[];
   fixes?: Fix[];
   symptoms?: Symptom[];
+}
+
+/** Every axis across every section, in display order. */
+export function allAxes(unfolded: Unfolded): Axis[] {
+  return unfolded.sections.flatMap((s) => s.axes);
 }
 
 const AXIS_TYPES = new Set(["select", "multi", "range", "sample"]);
@@ -172,12 +193,7 @@ function parseAxis(raw: unknown, index: number): Axis | undefined {
 
   if (type !== "range" && options.length === 0 && type !== "sample") return undefined;
 
-  const axis: Axis = {
-    id,
-    label,
-    group: str(a.group) === "core" ? "core" : "extra",
-    type,
-  };
+  const axis: Axis = { id, label, type };
   if (options.length) axis.options = options;
   if (range) axis.range = range;
 
@@ -227,32 +243,68 @@ function parseSymptoms(raw: unknown): Symptom[] | undefined {
   return symptoms.length ? symptoms : undefined;
 }
 
+function parseSection(raw: unknown, index: number): Section | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const s = raw as Record<string, unknown>;
+
+  const label = str(s.label);
+  if (!label) return undefined;
+
+  const axes = Array.isArray(s.axes)
+    ? (s.axes.map((a, i) => parseAxis(a, i)).filter(Boolean) as Axis[])
+    : [];
+  if (axes.length === 0) return undefined;
+
+  const section: Section = { id: str(s.id) ?? `section-${index}`, label, axes };
+  if (s.origin === "user") section.origin = "user";
+  return section;
+}
+
 /**
  * Turn raw model output into an `Unfolded`, or `null` if nothing survives.
  *
  * `request` supplies the intent when the model omitted it, so the assembled
  * prompt is never empty even on a half-broken payload.
+ *
+ * A payload that still uses a flat `axes` array — an older model, or one that
+ * skimmed the instruction — is gathered into a single unnamed section rather
+ * than rejected. The grouping is lost, which is a worse widget, but it is not a
+ * broken one.
  */
 export function parseUnfolded(raw: string | unknown, request: string): Unfolded | null {
   const data = typeof raw === "string" ? extractJson(raw) : raw;
   if (!data || typeof data !== "object") return null;
 
   const d = data as Record<string, unknown>;
-  const axes = Array.isArray(d.axes) ? (d.axes.map(parseAxis).filter(Boolean) as Axis[]) : [];
-  if (axes.length === 0) return null;
 
-  // Duplicate ids would make two rows share one slot in the selection state.
-  const seen = new Set<string>();
-  for (const axis of axes) {
-    if (seen.has(axis.id)) axis.id = `${axis.id}-${seen.size}`;
-    seen.add(axis.id);
+  let sections = Array.isArray(d.sections)
+    ? (d.sections.map(parseSection).filter(Boolean) as Section[])
+    : [];
+
+  if (sections.length === 0) {
+    const flat = Array.isArray(d.axes) ? (d.axes.map(parseAxis).filter(Boolean) as Axis[]) : [];
+    if (flat.length === 0) return null;
+    sections = [{ id: "axes", label: "", axes: flat }];
+  }
+
+  // Duplicate ids would make two rows share one slot in the selection state,
+  // and sections make collisions likelier since each is written separately.
+  const seenAxes = new Set<string>();
+  const seenSections = new Set<string>();
+  for (const section of sections) {
+    if (seenSections.has(section.id)) section.id = `${section.id}-${seenSections.size}`;
+    seenSections.add(section.id);
+    for (const axis of section.axes) {
+      if (seenAxes.has(axis.id)) axis.id = `${axis.id}-${seenAxes.size}`;
+      seenAxes.add(axis.id);
+    }
   }
 
   const intent = str(d.intent) ?? request.trim();
   const unfolded: Unfolded = {
     title: str(d.title) ?? intent.slice(0, 60),
     intent,
-    axes,
+    sections,
   };
 
   const fixes = parseFixes(d.fixes);
@@ -270,6 +322,10 @@ export function parseUnfolded(raw: string | unknown, request: string): Unfolded 
  * Purpose, audience, length, format, tone — the five that apply to almost any
  * request. Deliberately unopinionated: no option is marked `common`, because
  * guessing a usual value across all possible tasks would be a preference claim.
+ *
+ * They arrive as one unnamed section. Inventing group names for axes this
+ * generic would be naming for the sake of naming — the whole point of a section
+ * label is that it fits the actual task, and here there is no task to fit.
  */
 export function fallbackUnfolded(request: string): Unfolded {
   const intent = request.trim();
@@ -280,7 +336,6 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "purpose",
           label: "목적",
-          group: "core",
           type: "select",
           options: [
             {
@@ -303,7 +358,6 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "audience",
           label: "독자",
-          group: "core",
           type: "select",
           options: [
             {
@@ -326,7 +380,6 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "length",
           label: "분량",
-          group: "core",
           type: "select",
           options: [
             { value: "short", label: "짧게", emit: "핵심만 담아 짧게 쓴다." },
@@ -337,7 +390,6 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "format",
           label: "형식",
-          group: "extra",
           type: "select",
           options: [
             { value: "prose", label: "줄글", emit: "문단으로 이어지는 줄글로 쓴다." },
@@ -348,7 +400,6 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "tone",
           label: "톤",
-          group: "extra",
           type: "select",
           options: [
             { value: "plain", label: "담백하게", emit: "수식을 줄이고 담백한 톤으로 쓴다." },
@@ -361,7 +412,6 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "purpose",
           label: "Purpose",
-          group: "core",
           type: "select",
           options: [
             {
@@ -384,7 +434,6 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "audience",
           label: "Audience",
-          group: "core",
           type: "select",
           options: [
             {
@@ -407,7 +456,6 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "length",
           label: "Length",
-          group: "core",
           type: "select",
           options: [
             { value: "short", label: "Short", emit: "Keep it short — the essentials only." },
@@ -426,7 +474,6 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "format",
           label: "Format",
-          group: "extra",
           type: "select",
           options: [
             { value: "prose", label: "Prose", emit: "Write it as connected paragraphs." },
@@ -441,7 +488,6 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "tone",
           label: "Tone",
-          group: "extra",
           type: "select",
           options: [
             { value: "plain", label: "Plain", emit: "Keep the tone plain and unadorned." },
@@ -451,5 +497,9 @@ export function fallbackUnfolded(request: string): Unfolded {
         },
       ];
 
-  return { title: intent.slice(0, 60), intent, axes };
+  return {
+    title: intent.slice(0, 60),
+    intent,
+    sections: [{ id: "general", label: "", axes }],
+  };
 }

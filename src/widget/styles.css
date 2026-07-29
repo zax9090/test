@@ -170,6 +170,27 @@
   border-bottom-color: currentColor;
 }
 
+/* ── sections ─────────────────────────────────────────────────────────── */
+
+/*
+ * The boundary between sections is whitespace, never a rule. A line would add a
+ * second kind of divider to a layout whose only structure is alignment, and the
+ * gap already reads as a break at this scale.
+ */
+.uu-section + .uu-section {
+  margin-top: 22px;
+}
+
+.uu-section-label {
+  font-size: var(--font-text-xs-size, 13px);
+  font-weight: var(--font-weight-semibold, 600);
+  letter-spacing: 0.02em;
+  color: var(--color-text-secondary, inherit);
+  opacity: 0.75;
+  margin: 0 0 2px;
+  padding: 0 2px;
+}
+
 /* ── axis rows ────────────────────────────────────────────────────────── */
 
 .uu-row {
@@ -252,6 +273,17 @@
   border-color: currentColor;
   background: color-mix(in srgb, currentColor 16%, transparent);
   font-weight: var(--font-weight-medium, 500);
+}
+
+/*
+ * Decided on the user's behalf by a `default`. Outlined rather than filled: it
+ * reads as settled without claiming the user settled it, which is the same
+ * distinction the status mark and the result tab draw.
+ */
+.uu-chip.is-default {
+  border-color: currentColor;
+  background: transparent;
+  opacity: 0.75;
 }
 
 /* `common` gets a dot and nothing more. It is never preselected. */

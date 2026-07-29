@@ -1,10 +1,13 @@
 /**
  * What you get if you open the server's address in a browser.
  *
- * The root is the first thing anyone tries, and a bare 404 there reads as a
- * failed deployment rather than as "this path isn't a route" — which is exactly
- * how it was first read. So it says what the server is and, more usefully, hands
- * over the connector URL with the `/mcp` suffix people otherwise forget.
+ * Both of the addresses a person is likely to try answer badly on their own.
+ * The root 404s, and `/mcp` returns a JSON-RPC "must accept text/event-stream"
+ * error, because a browser is not an MCP client. Each reads as a broken
+ * deployment, and each was read that way in turn.
+ *
+ * So both serve this page instead, and it hands over the connector URL with the
+ * `/mcp` suffix people otherwise leave off.
  *
  * Self-contained and unstyled beyond a few lines: it loads nothing, tracks
  * nothing, and claims nothing about the tool it fronts.
@@ -48,8 +51,9 @@ const page = (origin: string) => `<!doctype html>
 </p>
 
 <p class="muted">
-  This address is not the server — it is a page about it. Add the URL below as a
-  custom connector in a client that supports remote MCP.
+  There is nothing here to look at in a browser — the server speaks MCP, not
+  HTML. Add the URL below as a custom connector in a client that supports
+  remote MCP.
 </p>
 <code>${origin}/mcp</code>
 

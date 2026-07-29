@@ -12,48 +12,56 @@ import type { Unfolded } from "../src/lib/schema.js";
 const cat: Unfolded = {
   title: "고양이 이미지",
   intent: "고양이 이미지 만들어줘",
-  axes: [
+  sections: [
     {
-      id: "coat",
-      label: "털색",
-      group: "core",
-      type: "select",
-      options: [
+      id: "subject",
+      label: "대상",
+      axes: [
         {
-          value: "black",
-          label: "검정",
-          emit: "털색은 검은색으로, 밝은 배경과 대비되게 한다.",
-          common: true,
+          id: "coat",
+          label: "털색",
+          type: "select",
+          options: [
+            {
+              value: "black",
+              label: "검정",
+              emit: "털색은 검은색으로, 밝은 배경과 대비되게 한다.",
+              common: true,
+            },
+            { value: "white", label: "흰색", emit: "털색은 흰색으로 한다." },
+          ],
         },
-        { value: "white", label: "흰색", emit: "털색은 흰색으로 한다." },
+        {
+          id: "pose",
+          label: "자세",
+          type: "select",
+          options: [
+            { value: "lying", label: "누움", emit: "누워 있는 자세로 그린다." },
+            { value: "sitting", label: "앉음", emit: "앉아 있는 자세로 그린다." },
+          ],
+        },
       ],
     },
     {
-      id: "pose",
-      label: "자세",
-      group: "core",
-      type: "select",
-      options: [
-        { value: "lying", label: "누움", emit: "누워 있는 자세로 그린다." },
-        { value: "sitting", label: "앉음", emit: "앉아 있는 자세로 그린다." },
+      id: "frame",
+      label: "화면",
+      axes: [
+        {
+          id: "mood",
+          label: "분위기",
+          type: "multi",
+          options: [
+            { value: "warm", label: "따뜻함", emit: "전체적으로 따뜻한 분위기로 한다." },
+            { value: "quiet", label: "고요함", emit: "고요한 인상을 준다." },
+          ],
+        },
+        {
+          id: "width",
+          label: "가로",
+          type: "range",
+          range: { unit: "px", min: 256, max: 2048, emitTemplate: "가로 {value}px로 만든다." },
+        },
       ],
-    },
-    {
-      id: "mood",
-      label: "분위기",
-      group: "extra",
-      type: "multi",
-      options: [
-        { value: "warm", label: "따뜻함", emit: "전체적으로 따뜻한 분위기로 한다." },
-        { value: "quiet", label: "고요함", emit: "고요한 인상을 준다." },
-      ],
-    },
-    {
-      id: "width",
-      label: "가로",
-      group: "extra",
-      type: "range",
-      range: { unit: "px", min: 256, max: 2048, emitTemplate: "가로 {value}px로 만든다." },
     },
   ],
   symptoms: [
@@ -61,6 +69,15 @@ const cat: Unfolded = {
     { id: "busy", label: "산만함", emit: "배경 요소를 줄인다." },
   ],
 };
+
+/** Replace one axis wherever it lives, keeping the section shape intact. */
+const withAxis = (u: Unfolded, id: string, patch: Record<string, unknown>): Unfolded => ({
+  ...u,
+  sections: u.sections.map((s) => ({
+    ...s,
+    axes: s.axes.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+  })),
+});
 
 const state = (over: Partial<State> = {}): State => ({
   selections: {},
@@ -108,8 +125,8 @@ describe("invariants", () => {
 
   it("does not throw when an axis is missing from state entirely", () => {
     expect(() => assemble(cat, { selections: {} })).not.toThrow();
-    expect(() => assemble({ ...cat, axes: [] }, state())).not.toThrow();
-    expect(assemble({ ...cat, axes: [] }, state())).toBe(cat.intent);
+    expect(() => assemble({ ...cat, sections: [] }, state())).not.toThrow();
+    expect(assemble({ ...cat, sections: [] }, state())).toBe(cat.intent);
   });
 });
 
@@ -159,10 +176,17 @@ describe("order", () => {
     expect(at("손그림")).toBeLessThan(at("자료"));
   });
 
-  it("keeps core ahead of extra regardless of the order they arrive in", () => {
-    const shuffled: Unfolded = { ...cat, axes: [...cat.axes].reverse() };
-    const text = assemble(shuffled, state({ selections: { coat: "black", width: 512 } }));
-    expect(text.indexOf("털색은 검은색")).toBeLessThan(text.indexOf("가로 512px"));
+  it("follows the declared section order, not importance", () => {
+    const swapped: Unfolded = { ...cat, sections: [...cat.sections].reverse() };
+    const text = assemble(swapped, state({ selections: { coat: "black", width: 512 } }));
+    // "화면" now comes first, so its axis leads.
+    expect(text.indexOf("가로 512px")).toBeLessThan(text.indexOf("털색은 검은색"));
+  });
+
+  it("never writes a section name into the prompt", () => {
+    const text = assemble(cat, state({ selections: { coat: "black", width: 512 } }));
+    expect(text).not.toContain("대상");
+    expect(text).not.toContain("화면");
   });
 });
 
@@ -180,30 +204,21 @@ describe("axis status", () => {
   });
 
   it("marks an axis with a default as decided-on-your-behalf", () => {
-    const withDefault: Unfolded = {
-      ...cat,
-      axes: [{ ...cat.axes[0]!, default: "white" }, ...cat.axes.slice(1)],
-    };
+    const withDefault = withAxis(cat, "coat", { default: "white" });
     const resolved = resolveAxes(withDefault, state());
     expect(resolved[0]!.status).toBe("partial");
     expect(resolved[0]!.line).toBe("털색은 흰색으로 한다.");
   });
 
   it("lets a user choice override the default", () => {
-    const withDefault: Unfolded = {
-      ...cat,
-      axes: [{ ...cat.axes[0]!, default: "white" }, ...cat.axes.slice(1)],
-    };
+    const withDefault = withAxis(cat, "coat", { default: "white" });
     const resolved = resolveAxes(withDefault, state({ selections: { coat: "black" } }));
     expect(resolved[0]!.status).toBe("set");
     expect(resolved[0]!.line).toContain("검은색");
   });
 
   it("copies set and partial lines but never delegated ones", () => {
-    const withDefault: Unfolded = {
-      ...cat,
-      axes: [cat.axes[0]!, { ...cat.axes[1]!, default: "lying" }, ...cat.axes.slice(2)],
-    };
+    const withDefault = withAxis(cat, "pose", { default: "lying" });
     const text = assemble(withDefault, state({ selections: { coat: "black" } }));
 
     expect(text).toContain("털색은 검은색"); // set
@@ -212,10 +227,7 @@ describe("axis status", () => {
   });
 
   it("ignores a default that points at a value that no longer exists", () => {
-    const stale: Unfolded = {
-      ...cat,
-      axes: [{ ...cat.axes[0]!, default: "chartreuse" }, ...cat.axes.slice(1)],
-    };
+    const stale = withAxis(cat, "coat", { default: "chartreuse" });
     const resolved = resolveAxes(stale, state());
     expect(resolved[0]!.status).toBe("unset");
     expect(assemble(stale, state())).toBe(cat.intent);
