@@ -12,6 +12,7 @@
  */
 
 import { MCP_ROUTE, SESSION_HEADER } from "./session.js";
+import { landingResponse } from "./resources/landing.js";
 import type { Env } from "./env.js";
 
 export { McpSession } from "./session.js";
@@ -34,6 +35,12 @@ async function routeToSession(request: Request, env: Env): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    // The address people actually paste into a browser. A 404 here looks like a
+    // broken deploy rather than a missing route.
+    if (url.pathname === "/") {
+      return landingResponse(url.origin);
+    }
 
     if (url.pathname === "/health") {
       return new Response("ok", { headers: { "content-type": "text/plain" } });
