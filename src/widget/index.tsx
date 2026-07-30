@@ -22,10 +22,12 @@ import { createRoot } from "react-dom/client";
 import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react-with-deps";
 
 import { assemble, resolveAxes, type Selection, type State } from "../lib/assemble.js";
-import type { Fix, Unfolded } from "../lib/schema.js";
+import { USER_AXIS_TEMPLATE, type AxisState, type Fix, type Unfolded } from "../lib/schema.js";
 import type { Locale } from "../lib/locale.js";
 import { strings } from "./i18n.js";
 import { AxisList } from "./AxisList.js";
+import { GoalField } from "./GoalField.js";
+import { PresetBar, PresetSave, usePresets } from "./PresetBar.js";
 import { MapView } from "./MapView.js";
 import { Result } from "./Result.js";
 import { useWidth } from "./useWidth.js";
@@ -115,6 +117,13 @@ function App() {
   // Folded by default; the header is what shows until it is opened.
   const [mapOpen, setMapOpen] = useState(false);
   const [refolding, setRefolding] = useState(false);
+  const [switchingGoal, setSwitchingGoal] = useState(false);
+  // Values a preset supplied. Held apart from `selections` so they can read as
+  // decided-for-you until the user actually touches one.
+  const [loaded, setLoaded] = useState<Record<string, Selection>>({});
+  const [loadedFrom, setLoadedFrom] = useState<{ id: string; name: string } | undefined>();
+  const [presetBusy, setPresetBusy] = useState(false);
+  const [presetReload, setPresetReload] = useState(0);
   // An axis the map asked for, held until its row actually exists in the DOM.
   const [pendingAxis, setPendingAxis] = useState<string | null>(null);
 
@@ -144,8 +153,8 @@ function App() {
   const t = useMemo(() => strings(locale), [locale]);
 
   const state: State = useMemo(
-    () => ({ selections, symptoms: chosenSymptoms, freeform, source, locale }),
-    [selections, chosenSymptoms, freeform, source, locale],
+    () => ({ selections, loaded, symptoms: chosenSymptoms, freeform, source, locale }),
+    [selections, loaded, chosenSymptoms, freeform, source, locale],
   );
 
   const resolved = useMemo(
@@ -155,16 +164,111 @@ function App() {
 
   const text = useMemo(() => (payload ? assemble(payload.unfolded, state) : ""), [payload, state]);
 
-  const setAxis = useCallback((axisId: string, value: Selection) => {
-    setSelections((prev) => ({ ...prev, [axisId]: value }));
+  const setAxis = useCallback((axisId: string, next: AxisState) => {
+    setSelections((prev) => ({ ...prev, [axisId]: next }));
+  }, []);
+
+  /**
+   * Add an empty axis to a section.
+   *
+   * A user axis has no options, no norm and no default — inventing a usual value
+   * for an item the model never thought of would be making it up. Its sentence is
+   * assembled from `{label}: {value}` with no particle handling, which is the one
+   * form that is safe in any language and against any value the user types.
+   *
+   * The label is empty on purpose: the row appears with the cursor in it. An axis
+   * with no label contributes nothing, so an abandoned one costs nothing either.
+   */
+  const addAxis = useCallback((sectionId: string) => {
+    setPayload((prev) => {
+      if (!prev) return prev;
+      const id = `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+      return {
+        ...prev,
+        unfolded: {
+          ...prev.unfolded,
+          sections: prev.unfolded.sections.map((section) =>
+            section.id === sectionId
+              ? {
+                  ...section,
+                  axes: [
+                    ...section.axes,
+                    {
+                      id,
+                      label: "",
+                      type: "open" as const,
+                      emitTemplate: USER_AXIS_TEMPLATE,
+                      origin: "user" as const,
+                    },
+                  ],
+                }
+              : section,
+          ),
+        },
+      };
+    });
+  }, []);
+
+  /** Only user axes are removable. A model axis is emptied, which needs no undo. */
+  const removeAxis = useCallback((axisId: string) => {
+    setPayload((prev) =>
+      prev
+        ? {
+            ...prev,
+            unfolded: {
+              ...prev.unfolded,
+              sections: prev.unfolded.sections.map((section) => ({
+                ...section,
+                axes: section.axes.filter((a) => a.id !== axisId),
+              })),
+            },
+          }
+        : prev,
+    );
+    setSelections((prev) => {
+      const next = { ...prev };
+      delete next[axisId];
+      return next;
+    });
+  }, []);
+
+  const addSection = useCallback((label: string) => {
+    setPayload((prev) =>
+      prev
+        ? {
+            ...prev,
+            unfolded: {
+              ...prev.unfolded,
+              sections: [
+                ...prev.unfolded.sections,
+                {
+                  id: `user-section-${Date.now().toString(36)}`,
+                  label,
+                  axes: [],
+                  origin: "user" as const,
+                },
+              ],
+            },
+          }
+        : prev,
+    );
   }, []);
 
   const toggleSymptom = useCallback((id: string) => {
     setChosenSymptoms((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
   }, []);
 
+  // A fix names option values, so each entry becomes a pressed chip rather than
+  // typed text — the sentence it emits is the model's, reason included.
   const applyFix = useCallback((fix: Fix) => {
-    setSelections((prev) => ({ ...prev, ...fix.set }));
+    setSelections((prev) => {
+      const next = { ...prev };
+      for (const [axisId, value] of Object.entries(fix.set)) {
+        next[axisId] = value;
+      }
+      return next;
+    });
   }, []);
 
   /**
@@ -199,6 +303,145 @@ function App() {
       setRefolding(false);
     }
   }, [app, payload, refolding, source, t]);
+
+  /**
+   * Switch the reading the axes were built for.
+   *
+   * Same shape as refold, and for the same reason: the answer is a different set
+   * of axes, which is a different widget. Asking the conversation is the one route
+   * that does not depend on the model calling a tool it has never seen — see
+   * docs/stage0-conflicts.md (C8). The old widget stands down on supersession.
+   *
+   * Left disabled afterwards on purpose. The reply does not come back here.
+   */
+  const runGoalSwitch = useCallback(
+    async (reading: string) => {
+      if (!app || switchingGoal || !payload) return;
+      setSwitchingGoal(true);
+
+      try {
+        await app.sendMessage({
+          role: "user",
+          content: [{ type: "text", text: t.goalAsk(payload.unfolded.intent, reading) }],
+        });
+      } catch {
+        setSwitchingGoal(false);
+      }
+    },
+    [app, payload, switchingGoal, t],
+  );
+
+  /**
+   * Call one of the app-only preset tools.
+   *
+   * Undefined where there is no app yet. A rejection is the expected answer on the
+   * remote Worker, where these tools are not registered at all — callers treat that
+   * as "no presets" rather than as an error, because storage being unavailable must
+   * never disturb the part that never needed storage.
+   */
+  const callPreset = useMemo(
+    () =>
+      app
+        ? async (name: string, args: Record<string, unknown> = {}) => {
+            const result = await app.callServerTool({ name, arguments: args });
+            return (result as { structuredContent?: unknown }).structuredContent;
+          }
+        : undefined,
+    [app],
+  );
+
+  const presets = usePresets(callPreset, presetReload);
+
+  /**
+   * Replace the axes with a saved set. No model call — they are already written.
+   *
+   * The stored values land in `loaded`, not in `selections`, so every one of them
+   * shows as decided-for-you until the user touches it. Touching one promotes that
+   * axis to their own choice and leaves the rest alone.
+   */
+  const loadPreset = useCallback(
+    async (id: string) => {
+      if (!callPreset || presetBusy) return;
+      setPresetBusy(true);
+
+      try {
+        const result = (await callPreset("load_preset", { id })) as
+          | {
+              found?: boolean;
+              preset?: { id: string; name: string };
+              unfolded?: Unfolded;
+              selections?: Record<string, Selection>;
+              symptoms?: string[];
+              locale?: Locale;
+            }
+          | undefined;
+
+        if (result?.found && result.unfolded?.sections?.length) {
+          setPayload({ unfolded: result.unfolded, locale: result.locale });
+          setSelections({});
+          setLoaded(result.selections ?? {});
+          setChosenSymptoms(result.symptoms ?? []);
+          setFreeform("");
+          // The material is the one thing a preset never carries, and the one
+          // thing that changes between runs. The box stays empty on purpose.
+          setSource("");
+          setLoadedFrom(result.preset);
+        }
+      } catch {
+        // No preset tools on this server, or the preset is gone. Nothing changes.
+      } finally {
+        setPresetBusy(false);
+      }
+    },
+    [callPreset, presetBusy],
+  );
+
+  const savePreset = useCallback(
+    async (name: string, overwriteId?: string) => {
+      if (!callPreset || !payload || presetBusy) return;
+      setPresetBusy(true);
+
+      try {
+        // Only the axes and the values travel. The source box is not passed at
+        // all — there is no argument for it to arrive in.
+        const result = (await callPreset("save_preset", {
+          name,
+          unfolded: JSON.stringify(payload.unfolded),
+          selections: JSON.stringify({ ...loaded, ...selections }),
+          ...(chosenSymptoms.length ? { symptoms: chosenSymptoms } : {}),
+          ...(overwriteId ? { overwriteId } : {}),
+        })) as { saved?: boolean; id?: string; name?: string } | undefined;
+
+        if (result?.saved && result.id) {
+          setLoadedFrom({ id: result.id, name: result.name ?? name });
+          setPresetReload((n) => n + 1);
+        }
+      } catch {
+        // Nothing to say — the brief allows no error banner.
+      } finally {
+        setPresetBusy(false);
+      }
+    },
+    [callPreset, payload, presetBusy, loaded, selections, chosenSymptoms],
+  );
+
+  const deletePreset = useCallback(
+    async (id: string) => {
+      if (!callPreset || presetBusy) return;
+      setPresetBusy(true);
+
+      try {
+        await callPreset("delete_preset", { id });
+        if (loadedFrom?.id === id) setLoadedFrom(undefined);
+        setPresetReload((n) => n + 1);
+      } catch {
+        // Nothing changes.
+      } finally {
+        setPresetBusy(false);
+      }
+    },
+    [callPreset, presetBusy, loadedFrom],
+  );
 
   const handleCopy = useCallback(async () => {
     const ok = await copyText(text);
@@ -296,12 +539,38 @@ function App() {
         </button>
       </div>
 
+      {/* Above the tabs, because it governs both of them: the goal decides which
+          axes exist, so it cannot live inside the list of them. */}
+      {payload.unfolded.goal ? (
+        <GoalField
+          goal={payload.unfolded.goal}
+          onSwitch={runGoalSwitch}
+          switching={switchingGoal}
+          disabled={!app || superseded}
+          t={t}
+        />
+      ) : null}
+
+      {/* Only where presets can exist. On the remote Worker `list_presets` is not
+          registered, the list stays empty, and this renders nothing. */}
+      <PresetBar
+        presets={presets}
+        loadedId={loadedFrom?.id}
+        busy={presetBusy || superseded}
+        onLoad={loadPreset}
+        onDelete={deletePreset}
+        t={t}
+      />
+
       {/* Both tabs stay mounted so switching keeps scroll and open/closed folds. */}
       <div hidden={tab !== "list"}>
         <AxisList
           sections={payload.unfolded.sections}
           resolved={resolved}
           onChange={setAxis}
+          onAddAxis={addAxis}
+          onRemoveAxis={removeAxis}
+          onAddSection={addSection}
           symptoms={payload.unfolded.symptoms ?? []}
           chosenSymptoms={chosenSymptoms}
           onSymptom={toggleSymptom}
@@ -333,6 +602,18 @@ function App() {
           canSend={Boolean(app) && !superseded}
           t={t}
         />
+
+        {/* Saving is asked for here, next to the finished text — the point at
+            which the user knows the settings were worth keeping. Absent where
+            there is nowhere to write. */}
+        {callPreset ? (
+          <PresetSave
+            loaded={loadedFrom}
+            busy={presetBusy || superseded}
+            onSave={savePreset}
+            t={t}
+          />
+        ) : null}
       </div>
     </div>
   );

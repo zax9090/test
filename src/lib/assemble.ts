@@ -17,22 +17,80 @@
  * more axes on must not make the prompt longer than what was actually chosen.
  */
 
-import { allAxes, type Axis, type Option, type Unfolded } from "./schema.js";
+import {
+  allAxes,
+  NO_STATE,
+  VALUE_PLACEHOLDER,
+  type Axis,
+  type AxisState,
+  type Option,
+  type Unfolded,
+} from "./schema.js";
 
 /** Which locale the assembled prose is written for. Only affects the source heading. */
 export type AssembleLocale = "ko" | "en";
 
 /**
- * A single axis selection.
+ * A selection as it may arrive from anywhere.
  *
- * `string` for select/sample, `string[]` for multi, `number` for range. `null`
- * and `undefined` both mean untouched, so clearing a chip needs no special case.
+ * The widget holds {@link AxisState}, which carries provenance. But a stored
+ * preset, a `fixes` entry and a model `default` are all plain values, and older
+ * payloads used plain values throughout. {@link toState} narrows any of them.
  */
-export type Selection = string | string[] | number | null | undefined;
+export type Selection = AxisState | string | string[] | number | null | undefined;
+
+/**
+ * Normalise anything into an {@link AxisState}.
+ *
+ * The axis is needed, not optional: whether a bare string is a pressed chip or
+ * typed text depends on whether the axis offers it as an option, and that is the
+ * difference between emitting the model's sentence and emitting the template.
+ * Guessing wrong would attribute a reason the user never saw to a value they
+ * typed themselves.
+ */
+export function toState(axis: Axis, raw: Selection): AxisState {
+  if (raw === null || raw === undefined) return NO_STATE;
+
+  if (typeof raw === "object" && !Array.isArray(raw) && "kind" in raw) return raw;
+
+  if (Array.isArray(raw)) {
+    const known = raw.filter((v) => findOption(axis, v));
+    return known.length ? { kind: "options", optionValues: known } : NO_STATE;
+  }
+
+  if (typeof raw === "number") {
+    return Number.isFinite(raw) ? { kind: "number", value: raw } : NO_STATE;
+  }
+
+  const text = raw.trim();
+  if (!text) return NO_STATE;
+
+  if (findOption(axis, text)) return { kind: "option", optionValue: text };
+
+  // A range value that arrived as a string, which is what a number input gives.
+  if (axis.type === "range") {
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? { kind: "number", value: parsed } : NO_STATE;
+  }
+
+  return { kind: "typed", text };
+}
 
 export interface State {
   /** Axis id to chosen value. Ids with no matching axis are ignored. */
   selections: Record<string, Selection>;
+  /**
+   * Values that came from a preset.
+   *
+   * Applied where the user has not chosen, and reported as `partial` — the same
+   * status a model `default` gets, for the same reason: the value is decided but
+   * not decided *this time*. They are the user's own earlier choices, which is
+   * exactly why they must stay visible rather than be adopted silently (P7).
+   *
+   * Separate from `default` because a `default` is a single scalar and a stored
+   * multi-select is an array.
+   */
+  loaded?: Record<string, Selection>;
   /** Ids of the selected symptoms. */
   symptoms?: string[];
   /** The free-text box. Always available (P4). */
@@ -58,9 +116,11 @@ export interface ResolvedAxis {
   /** Which section the axis was declared in, so the list can group its rows. */
   sectionId: string;
   status: AxisStatus;
+  /** What the row should render, provenance included. */
+  state: AxisState;
   /** The sentence this axis contributes. Empty when `unset`. */
   line: string;
-  /** Values in play, for chip highlighting. Empty when `unset`. */
+  /** Values in play, for marking the matching example. Empty when `unset`. */
   values: string[];
 }
 
@@ -68,8 +128,6 @@ const SOURCE_HEADING: Record<AssembleLocale, string> = { ko: "자료", en: "Sour
 
 /** Above this, or across more than one line, the source gets a heading of its own. */
 const SOURCE_BLOCK_THRESHOLD = 200;
-
-const VALUE_PLACEHOLDER = "{value}";
 
 function findOption(axis: Axis, value: string): Option | undefined {
   return axis.options?.find((o) => o.value === value);
@@ -86,55 +144,62 @@ function renderRange(axis: Axis, value: number): string | undefined {
 }
 
 /**
- * Turn one raw selection into its sentence.
+ * Turn one axis state into its sentence.
  *
- * Returns `undefined` when the value cannot be rendered — an option id that no
- * longer exists, a blank multi-select, a non-numeric range. A stale value is
- * treated as untouched rather than as an error; the brief has no error state for
- * this, and throwing would take the whole prompt down over one bad chip.
+ * Which sentence depends on where the value came from. A pressed chip emits the
+ * sentence the model wrote for that option, reason and all. The very same words
+ * typed by hand emit the axis template instead, because the reason was the
+ * model's and the user never saw it — attaching it to their own words would put a
+ * justification in their mouth.
  *
- * Out-of-range numbers are emitted unchanged: the widget informs, it does not
+ * Returns `undefined` when nothing can be rendered: an option that no longer
+ * exists, an empty multi-select, a non-numeric range. Stale values are treated as
+ * untouched rather than as errors; throwing would take the whole prompt down over
+ * one bad chip.
+ *
+ * Out-of-range numbers are emitted unchanged — the widget informs, it does not
  * block (P4).
  */
-function renderSelection(
-  axis: Axis,
-  raw: Selection,
-): { line: string; values: string[] } | undefined {
-  if (raw === null || raw === undefined) return undefined;
+function renderState(axis: Axis, state: AxisState): { line: string; values: string[] } | undefined {
+  switch (state.kind) {
+    case "none":
+      return undefined;
 
-  if (Array.isArray(raw)) {
-    const options = raw.map((v) => findOption(axis, v)).filter((o): o is Option => Boolean(o));
-    if (options.length === 0) return undefined;
-    // One line per axis, even when several values are on. Keeps "one axis
-    // decided adds one entry" true for multi as well as select.
-    return {
-      line: options.map((o) => o.emit).join(" "),
-      values: options.map((o) => o.value),
-    };
-  }
+    case "option": {
+      const option = findOption(axis, state.optionValue);
+      return option ? { line: option.emit, values: [option.value] } : undefined;
+    }
 
-  if (typeof raw === "number") {
-    if (!Number.isFinite(raw)) return undefined;
-    const line = renderRange(axis, raw);
-    return line ? { line, values: [String(raw)] } : undefined;
-  }
+    case "options": {
+      const options = state.optionValues
+        .map((v) => findOption(axis, v))
+        .filter((o): o is Option => Boolean(o));
+      if (options.length === 0) return undefined;
+      // One line per axis however many values are on, so "one axis decided adds
+      // one entry" stays true for multi as well.
+      return {
+        line: options.map((o) => o.emit).join(" "),
+        values: options.map((o) => o.value),
+      };
+    }
 
-  const value = raw.trim();
-  if (!value) return undefined;
+    case "typed": {
+      const text = state.text.trim();
+      if (!text) return undefined;
+      const template = axis.emitTemplate;
+      // No template means no way to place the value in a sentence. Emitting the
+      // bare text would be indistinguishable from the freeform box, which is a
+      // different thing with a different purpose.
+      if (!template?.includes(VALUE_PLACEHOLDER)) return undefined;
+      return { line: template.split(VALUE_PLACEHOLDER).join(text), values: [text] };
+    }
 
-  const option = findOption(axis, value);
-  if (option) return { line: option.emit, values: [option.value] };
-
-  // A range axis whose value arrived as a string (form inputs give strings).
-  if (axis.type === "range") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      const line = renderRange(axis, parsed);
-      if (line) return { line, values: [value] };
+    case "number": {
+      if (!Number.isFinite(state.value)) return undefined;
+      const line = renderRange(axis, state.value);
+      return line ? { line, values: [String(state.value)] } : undefined;
     }
   }
-
-  return undefined;
 }
 
 /**
@@ -152,26 +217,51 @@ export function resolveAxes(unfolded: Unfolded, state: State): ResolvedAxis[] {
 
   return allAxes(unfolded).map((axis) => {
     const sectionId = sectionOf.get(axis.id) ?? "";
-    const chosen = renderSelection(axis, selections[axis.id]);
+    const own = toState(axis, selections[axis.id]);
+    const chosen = renderState(axis, own);
     if (chosen) {
-      return { axis, sectionId, status: "set" as const, line: chosen.line, values: chosen.values };
+      return {
+        axis,
+        sectionId,
+        status: "set" as const,
+        state: own,
+        line: chosen.line,
+        values: chosen.values,
+      };
     }
 
-    // Nothing chosen — a `default` stands in, and says so on screen.
+    // Nothing chosen this time. A preset value stands in first — it is the user's
+    // own earlier answer, so it outranks whatever the model would have defaulted to.
+    const stored = toState(axis, state.loaded?.[axis.id]);
+    const fromPreset = renderState(axis, stored);
+    if (fromPreset) {
+      return {
+        axis,
+        sectionId,
+        status: "partial" as const,
+        state: stored,
+        line: fromPreset.line,
+        values: fromPreset.values,
+      };
+    }
+
+    // Failing that, a `default` stands in, and says so on screen.
     if (axis.default !== undefined && axis.default !== null) {
-      const applied = renderSelection(axis, axis.default);
+      const fallback = toState(axis, axis.default);
+      const applied = renderState(axis, fallback);
       if (applied) {
         return {
           axis,
           sectionId,
           status: "partial" as const,
+          state: fallback,
           line: applied.line,
           values: applied.values,
         };
       }
     }
 
-    return { axis, sectionId, status: "unset" as const, line: "", values: [] };
+    return { axis, sectionId, status: "unset" as const, state: NO_STATE, line: "", values: [] };
   });
 }
 
@@ -198,7 +288,15 @@ function renderSource(source: string, locale: AssembleLocale): string {
  */
 export function assemble(unfolded: Unfolded, state: State): string {
   const locale = state.locale ?? "en";
-  const blocks: string[] = [unfolded.intent.trim()];
+
+  // The goal rides with the intent, on the line below it. Unlike an axis it *is*
+  // part of the instruction — it says which reading of the request the rest of the
+  // prompt was built for. It is on screen and switchable, so it is never a
+  // sentence the user did not see.
+  const opening = unfolded.goal
+    ? `${unfolded.intent.trim()}\n${unfolded.goal.selected.trim()}`
+    : unfolded.intent.trim();
+  const blocks: string[] = [opening];
 
   const axisLines = resolveAxes(unfolded, state)
     .filter((r) => r.status !== "unset")

@@ -1,0 +1,33 @@
+{
+  // The local half of the codebase. Node types instead of the Workers globals:
+  // this is the only directory that may touch a filesystem, because a Cloudflare
+  // Worker has none and presets have to live somewhere the user owns.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  // The shared modules are platform-free TypeScript and typecheck under every
+  // project. `preset-store.ts` deliberately imports no filesystem API so it can
+  // be one of them.
+  "include": [
+    "**/*",
+    "../build-server.ts",
+    "../tools/**/*",
+    "../lib/**/*",
+    "../resources/**/*",
+    "../generated/**/*"
+  ]
+}

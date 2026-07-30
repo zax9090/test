@@ -18,7 +18,7 @@ import { assemble } from "../src/lib/assemble.js";
 const axis = (over: Record<string, unknown> = {}) => ({
   id: "coat",
   label: "털색",
-  type: "select",
+  type: "closed",
   options: [{ value: "black", label: "검정", emit: "털색은 검은색." }],
   ...over,
 });
@@ -68,7 +68,7 @@ describe("parseUnfolded — salvage", () => {
     const raw = payload({
       axes: [
         axis(),
-        { id: "nolabel", type: "select", options: [] },
+        { id: "nolabel", type: "closed", options: [] },
         axis({ id: "pose", label: "자세" }),
       ],
     });
@@ -172,10 +172,12 @@ describe("parseUnfolded — sections", () => {
 });
 
 describe("parseUnfolded — type repair", () => {
-  it("infers select when the type is missing or unknown", () => {
+  it("opens an axis whose type is missing or unrecognised", () => {
+    // Opening is the safe default: closing an axis that should be open hides
+    // values the user wanted, which is the failure this tool exists to prevent.
     for (const type of [undefined, "dropdown", 42]) {
       const parsed = parseUnfolded(payload({ axes: [axis({ type })] }), "고양이")!;
-      expect(allAxes(parsed)[0]!.type).toBe("select");
+      expect(allAxes(parsed)[0]!.type).toBe("open");
     }
   });
 
@@ -186,18 +188,110 @@ describe("parseUnfolded — type repair", () => {
     expect(allAxes(parseUnfolded(raw, "고양이")!)[0]!.type).toBe("range");
   });
 
-  it("does not leave a range axis that has no template — it would render dead", () => {
-    const raw = payload({
-      axes: [axis({ type: "range", range: { unit: "px" } })],
-    });
+  it("does not leave a range axis with no template — it would render dead", () => {
+    const raw = payload({ axes: [axis({ type: "range", range: { unit: "px" } })] });
     const parsed = allAxes(parseUnfolded(raw, "고양이")!)[0]!;
-    expect(parsed.type).toBe("select");
+    expect(parsed.type).toBe("open");
     expect(parsed.range).toBeUndefined();
   });
 
-  it("keeps a sample axis even with no options to show yet", () => {
+  it("keeps a short retired `select` list closed, and opens a long one", () => {
+    const short = payload({ axes: [axis({ type: "select" })] });
+    expect(allAxes(parseUnfolded(short, "고양이")!)[0]!.type).toBe("closed");
+
+    const many = payload({
+      axes: [
+        axis({
+          type: "select",
+          options: Array.from({ length: 8 }, (_, i) => ({
+            value: `v${i}`,
+            label: `L${i}`,
+            emit: `e${i}`,
+          })),
+        }),
+      ],
+    });
+    // Eight values was never a complete list — that is what this rewrite is about.
+    expect(allAxes(parseUnfolded(many, "고양이")!)[0]!.type).toBe("open");
+  });
+
+  it("turns a retired `sample` axis into an open one", () => {
     const raw = payload({ axes: [axis({ id: "voice", type: "sample", options: [] })] });
-    expect(allAxes(parseUnfolded(raw, "고양이")!)[0]!.type).toBe("sample");
+    const parsed = allAxes(parseUnfolded(raw, "고양이")!)[0]!;
+    expect(parsed.type).toBe("open");
+    // An open axis is answerable through its box, so no options is survivable.
+    expect(parsed.options).toBeUndefined();
+  });
+
+  it("synthesises a template for an open axis that came without one", () => {
+    const raw = payload({ axes: [axis({ label: "털색", type: "open" })] });
+    const parsed = allAxes(parseUnfolded(raw, "고양이")!)[0]!;
+    // Dropping the axis would lose it entirely, which costs more than a plain
+    // sentence shape. `{label}: {value}` is what a user-added axis uses too.
+    expect(parsed.emitTemplate).toBe("털색: {value}");
+  });
+
+  it("replaces an open template that has no placeholder", () => {
+    const raw = payload({
+      axes: [axis({ label: "털색", type: "open", emitTemplate: "털색을 정한다" })],
+    });
+    expect(allAxes(parseUnfolded(raw, "고양이")!)[0]!.emitTemplate).toContain("{value}");
+  });
+
+  it("trims open examples down to a handful", () => {
+    const raw = payload({
+      axes: [
+        axis({
+          type: "open",
+          emitTemplate: "털색은 {value}.",
+          options: Array.from({ length: 12 }, (_, i) => ({
+            value: `v${i}`,
+            label: `L${i}`,
+            emit: `e${i}`,
+          })),
+        }),
+      ],
+    });
+    // Past a handful they stop reading as examples and start reading as a menu.
+    expect(allAxes(parseUnfolded(raw, "고양이")!)[0]!.options).toHaveLength(6);
+  });
+
+  it("drops a closed or multi axis with no options — it cannot be answered", () => {
+    for (const type of ["closed", "multi"]) {
+      const raw = payload({ axes: [axis({ type, options: [] })] });
+      expect(parseUnfolded(raw, "고양이")).toBeNull();
+    }
+  });
+
+  it("keeps a user axis free of options, norm and default", () => {
+    const raw = payload({
+      axes: [
+        axis({
+          origin: "user",
+          type: "open",
+          emitTemplate: "털 길이: {value}",
+          norm: "보통 중간",
+          default: "black",
+        }),
+      ],
+    });
+    const parsed = allAxes(parseUnfolded(raw, "고양이")!)[0]!;
+    expect(parsed.origin).toBe("user");
+    expect(parsed.options).toBeUndefined();
+    expect(parsed.norm).toBeUndefined();
+    expect(parsed.default).toBeUndefined();
+  });
+
+  it("keeps a placeholder only on an open axis", () => {
+    const open = payload({
+      axes: [
+        axis({ type: "open", emitTemplate: "털색은 {value}.", placeholder: "예: 고등어 태비" }),
+      ],
+    });
+    expect(allAxes(parseUnfolded(open, "고양이")!)[0]!.placeholder).toBe("예: 고등어 태비");
+
+    const closed = payload({ axes: [axis({ type: "closed", placeholder: "무의미" })] });
+    expect(allAxes(parseUnfolded(closed, "고양이")!)[0]!.placeholder).toBeUndefined();
   });
 });
 
@@ -311,5 +405,72 @@ describe("fallbackUnfolded", () => {
     expect(u.sections).toHaveLength(1);
     expect(u.sections[0]!.label).toBe("");
     expect(allAxes(u)).toHaveLength(5);
+  });
+
+  it("proposes no goal — there was no reading to take", () => {
+    expect(fallbackUnfolded("draw a cat").goal).toBeUndefined();
+  });
+});
+
+// ── the goal ───────────────────────────────────────────────────────────────
+
+describe("parseUnfolded — goal", () => {
+  const withGoal = (goal: unknown) =>
+    parseUnfolded(
+      JSON.stringify({ intent: "웹사이트 설계해줘", goal, sections: [section([axis()])] }),
+      "웹사이트 설계해줘",
+    );
+
+  it("keeps a goal that has alternatives to switch to", () => {
+    const parsed = withGoal({
+      selected: "정보를 보여주는 사이트",
+      alternatives: ["물건을 파는 사이트", "가입을 받는 사이트"],
+    })!;
+    expect(parsed.goal?.selected).toBe("정보를 보여주는 사이트");
+    expect(parsed.goal?.alternatives).toEqual(["물건을 파는 사이트", "가입을 받는 사이트"]);
+  });
+
+  it("drops a goal with no alternatives rather than showing a line nobody can change", () => {
+    expect(
+      withGoal({ selected: "정보를 보여주는 사이트", alternatives: [] })?.goal,
+    ).toBeUndefined();
+    expect(withGoal({ selected: "정보를 보여주는 사이트" })?.goal).toBeUndefined();
+  });
+
+  it("drops a goal with no selected reading", () => {
+    expect(withGoal({ alternatives: ["a", "b"] })?.goal).toBeUndefined();
+    expect(withGoal({ selected: "   ", alternatives: ["a"] })?.goal).toBeUndefined();
+  });
+
+  it("drops an alternative that restates the selected reading", () => {
+    const parsed = withGoal({
+      selected: "정보 사이트",
+      alternatives: ["정보 사이트", "판매 사이트"],
+    })!;
+    expect(parsed.goal?.alternatives).toEqual(["판매 사이트"]);
+  });
+
+  it("dedupes alternatives and caps them at three", () => {
+    const parsed = withGoal({
+      selected: "s",
+      alternatives: ["a", "a", "b", "c", "d", "e"],
+    })!;
+    expect(parsed.goal?.alternatives).toEqual(["a", "b", "c"]);
+  });
+
+  it("survives a goal that is the wrong type entirely", () => {
+    for (const bad of ["nope", 7, [], null, { selected: 5, alternatives: "x" }]) {
+      expect(() => withGoal(bad)).not.toThrow();
+      expect(withGoal(bad)?.goal).toBeUndefined();
+    }
+  });
+
+  it("leaves the goal out when the payload never mentioned one", () => {
+    const parsed = parseUnfolded(
+      JSON.stringify({ intent: "고양이", sections: [section([axis()])] }),
+      "고양이",
+    )!;
+    expect(parsed.goal).toBeUndefined();
+    expect("goal" in parsed).toBe(false);
   });
 });

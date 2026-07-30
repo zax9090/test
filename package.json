@@ -9,7 +9,7 @@
     "build:widget": "node scripts/build-widget.mjs",
     "build:harness": "node scripts/build-widget-harness.mjs",
     "deploy": "npm run build:widget && wrangler deploy",
-    "typecheck": "npm run build:widget && tsc --noEmit && tsc --noEmit -p src/widget",
+    "typecheck": "npm run build:widget && tsc --noEmit && tsc --noEmit -p src/widget && tsc --noEmit -p src/local",
     "test": "vitest run",
     "test:widget": "npm run build:widget && npm run build:harness && playwright test",
     "test:all": "npm run format:check && npm run typecheck && npm run test && npm run test:widget",
@@ -25,6 +25,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260728.1",
     "@playwright/test": "^1.62.0",
+    "@types/node": "^26.1.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "esbuild": "^0.28.1",

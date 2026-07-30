@@ -170,6 +170,281 @@
   border-bottom-color: currentColor;
 }
 
+/* ── goal ─────────────────────────────────────────────────────────────── */
+
+/*
+ * The goal governs the axes, so it sits above them and is separated by the same
+ * whitespace a section boundary uses — not by a rule, and not by a box. A framed
+ * panel would read as a different kind of object; it is the same kind of thing as
+ * a row, one level up.
+ */
+.uu-goal {
+  padding: 0 2px 12px;
+}
+
+.uu-goal-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.uu-goal-current {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+
+.uu-goal-current:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* The reading is a sentence, so it wraps rather than truncating — a goal cut off
+   mid-clause is a goal the user cannot check. */
+.uu-goal-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.uu-goal-open {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  /* Lines up under the goal text, not under its label — same 84px column the
+     axis labels use, plus the row gap. Reset when the label wraps (see narrow). */
+  padding-left: 94px;
+}
+
+/*
+ * An alternative is a choice, so it is shaped like every other choice in the
+ * widget — a pill that hugs its text. Full-width and square-cornered it was
+ * indistinguishable from the input box directly below it, and read as an empty
+ * field rather than something to click.
+ */
+.uu-goal-alt {
+  appearance: none;
+  align-self: flex-start;
+  max-width: 100%;
+  background: transparent;
+  border: 1px solid var(--color-border-primary, rgba(128, 128, 128, 0.32));
+  border-radius: var(--border-radius-full, 999px);
+  padding: 4px 10px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.uu-goal-alt:hover:not(:disabled) {
+  border-color: currentColor;
+}
+
+.uu-goal-alt:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.uu-goal-own {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.uu-goal-own .uu-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.uu-goal-go {
+  appearance: none;
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm, 6px);
+  padding: 5px 9px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.uu-goal-go:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* ── open axes ────────────────────────────────────────────────────────── */
+
+/*
+ * The box is the control; the examples underneath are hints. That order is the
+ * whole point of this row — five chips said "these are the values", when the
+ * honest answer is that nobody can list every coat colour.
+ */
+.uu-open {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  position: relative;
+}
+
+.uu-open-input {
+  width: 100%;
+}
+
+/*
+ * A value nobody typed. Dashed, because dotted already means undecided in this
+ * widget's icon grammar — the status mark beside the row is saying the same
+ * thing, so no per-row label is needed. See docs/stage0-conflicts.md (C14).
+ */
+.uu-input.is-standin {
+  border-style: dashed;
+  opacity: 0.8;
+}
+
+.uu-open-clear {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+}
+
+/*
+ * Examples read as text, not as buttons. Made pressable-looking they would be a
+ * menu again, which is what this replaced. They wrap — hiding them behind a
+ * horizontal scroll would lose the hint entirely.
+ */
+.uu-examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.uu-example {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 1px 0;
+  font: inherit;
+  font-size: var(--font-text-xs-size, 11.5px);
+  color: var(--color-text-tertiary, inherit);
+  opacity: 0.7;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  /* Tight against the word: the `common` dot has to read as belonging to this
+     example, not as another separator. */
+  gap: 2px;
+}
+
+/*
+ * Smaller than a chip's dot and hard against the label. At the same size as the
+ * separator middot the two were indistinguishable — "검정 • · 흰색" read as two
+ * separators in a row, so neither mark meant anything.
+ */
+.uu-example .uu-dot {
+  width: 2px;
+  height: 2px;
+}
+
+.uu-example:hover {
+  opacity: 1;
+}
+
+/* The matching example is emphasised only — never drawn as pressed. */
+.uu-example.is-current {
+  opacity: 1;
+  color: var(--color-text-primary, inherit);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+/* The separator gets the room instead, so the rhythm of the list is the gap. */
+.uu-sep::before {
+  content: "·";
+  opacity: 0.35;
+  font-size: var(--font-text-xs-size, 11.5px);
+  margin: 0 7px;
+}
+
+/* ── added axes and groups ────────────────────────────────────────────── */
+
+/*
+ * A quiet line, not a button. It has to be findable without competing with the
+ * axes themselves — and it is never behind a fold, because an add affordance
+ * nobody finds is the same as not having one.
+ */
+.uu-add {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 4px 2px;
+  font: inherit;
+  font-size: var(--font-text-xs-size, 11.5px);
+  color: var(--color-text-tertiary, inherit);
+  opacity: 0.65;
+  cursor: pointer;
+  text-align: left;
+}
+
+.uu-add:hover {
+  opacity: 1;
+}
+
+.uu-add-axis {
+  margin-left: 94px;
+}
+
+.uu-add-section {
+  margin-top: 18px;
+}
+
+/* Label and value side by side, matching the model rows' alignment. */
+.uu-user-axis {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 2px;
+}
+
+.uu-user-axis .uu-user-label {
+  flex: 0 0 84px;
+}
+
+.uu-user-axis .uu-user-value {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.uu-new-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+@media (max-width: 420px) {
+  .uu-add-axis {
+    margin-left: 0;
+  }
+
+  .uu-user-axis {
+    flex-wrap: wrap;
+  }
+
+  .uu-user-axis .uu-user-label {
+    flex-basis: 100%;
+  }
+}
+
 /* ── sections ─────────────────────────────────────────────────────────── */
 
 /*
@@ -577,5 +852,119 @@
   .uu-status {
     order: -1;
     margin-left: auto;
+  }
+
+  /* The goal's label wraps to its own line here too, so the alternatives have no
+     label column left to line up under. */
+  .uu-goal-row {
+    flex-wrap: wrap;
+  }
+
+  .uu-goal-open {
+    padding-left: 0;
+  }
+}
+
+/* ── presets ──────────────────────────────────────────────────────────── */
+
+/*
+ * Same shape as the goal row, one level down: it also replaces the axes wholesale
+ * rather than changing one line, so it belongs with the goal rather than among
+ * the rows.
+ */
+.uu-presets {
+  padding: 0 2px 12px;
+}
+
+.uu-preset-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.uu-preset-current {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+
+.uu-preset-current:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.uu-preset-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uu-preset-open {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding-left: 94px;
+}
+
+.uu-preset-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A name hugs its text, like every other choice in the widget. */
+.uu-preset-name {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--color-border-primary, rgba(128, 128, 128, 0.32));
+  border-radius: var(--border-radius-full, 999px);
+  padding: 4px 10px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.uu-preset-name.is-on {
+  border-color: currentColor;
+}
+
+.uu-preset-name:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.uu-preset-save {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 2px 0;
+}
+
+.uu-preset-save .uu-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@media (max-width: 420px) {
+  .uu-preset-row {
+    flex-wrap: wrap;
+  }
+
+  .uu-preset-open {
+    padding-left: 0;
   }
 }

@@ -26,7 +26,7 @@ const PAYLOAD = {
             {
               id: "coat",
               label: "털색",
-              type: "select",
+              type: "closed",
               norm: "보통 단색이 인식률이 높습니다",
               options: [
                 { value: "black", label: "검정", emit: "털색은 검은색으로 한다.", common: true },
@@ -36,7 +36,7 @@ const PAYLOAD = {
             {
               id: "pose",
               label: "자세",
-              type: "select",
+              type: "closed",
               options: [
                 { value: "lying", label: "누움", emit: "누워 있는 자세로 그린다." },
                 { value: "sitting", label: "앉음", emit: "앉아 있는 자세로 그린다." },
@@ -51,7 +51,7 @@ const PAYLOAD = {
             {
               id: "light",
               label: "조명",
-              type: "select",
+              type: "closed",
               default: "soft",
               options: [
                 { value: "soft", label: "부드럽게", emit: "부드러운 조명을 쓴다." },
@@ -61,7 +61,7 @@ const PAYLOAD = {
             {
               id: "bg",
               label: "배경",
-              type: "select",
+              type: "closed",
               options: [{ value: "plain", label: "단색", emit: "배경은 단색으로 한다." }],
             },
           ],
@@ -334,7 +334,7 @@ test("switches its own chrome to English for an English request", async ({ page 
               {
                 id: "tone",
                 label: "Tone",
-                type: "select",
+                type: "closed",
                 options: [{ value: "plain", label: "Plain", emit: "Keep the tone plain." }],
               },
             ],
@@ -455,7 +455,9 @@ const SAMPLE_PAYLOAD = {
             {
               id: "voice",
               label: "문체",
-              type: "sample",
+              type: "open",
+              emitTemplate: "문체는 {value}으로 쓴다.",
+              placeholder: "예: 사무적이지만 딱딱하지 않게",
               options: [
                 {
                   value: "plain",
@@ -480,21 +482,90 @@ const SAMPLE_PAYLOAD = {
   },
 };
 
-test("a sample axis shows each direction as readable text, not a label", async ({ page }) => {
+test("an open axis leads with its box, not with its options", async ({ page }) => {
   const frame = await open(page, SAMPLE_PAYLOAD);
 
-  await expect(frame.locator(".uu-card")).toHaveCount(3);
-  await expect(frame.locator(".uu-card").first()).toContainText("예산은 3분기까지 동결된다.");
-  // A direction with no sample yet is still offered — the card is just lighter.
-  await expect(frame.locator(".uu-card").nth(2)).toContainText("아주 짧게");
+  // The box is the control. The examples are a hint underneath it.
+  await expect(frame.locator(".uu-open-input")).toBeVisible();
+  await expect(frame.locator(".uu-example")).toHaveCount(3);
+
+  const boxY = (await frame.locator(".uu-open-input").boundingBox()).y;
+  const exampleY = (await frame.locator(".uu-example").first().boundingBox()).y;
+  expect(boxY).toBeLessThan(exampleY);
+
+  // Examples are not chips, so nothing here can read as a menu of the values.
+  await expect(frame.locator(".uu-chip")).toHaveCount(0);
 });
 
-test("picking a card decides the axis", async ({ page }) => {
+test("the box invites a value that is not in the list", async ({ page }) => {
+  const frame = await open(page, SAMPLE_PAYLOAD);
+  await expect(frame.locator(".uu-open-input")).toHaveAttribute(
+    "placeholder",
+    "예: 사무적이지만 딱딱하지 않게",
+  );
+});
+
+test("pressing an example fills the box and emits the sentence written for it", async ({
+  page,
+}) => {
   const frame = await open(page, SAMPLE_PAYLOAD);
 
-  await frame.locator(".uu-card", { hasText: "담백하게" }).click();
+  await frame.locator(".uu-example", { hasText: "담백하게" }).click();
+  await expect(frame.locator(".uu-open-input")).toHaveValue("담백하게");
+  // The option's own sentence, reason included — not the bare template.
   await expect(prompt(frame)).toContainText("담백한 문체로 쓴다.");
-  await expect(frame.locator(".uu-card.is-on")).toHaveCount(1);
+});
+
+test("an example is emphasised, never drawn as pressed", async ({ page }) => {
+  const frame = await open(page, SAMPLE_PAYLOAD);
+  const example = frame.locator(".uu-example", { hasText: "담백하게" });
+
+  await example.click();
+  await expect(example).toHaveClass(/is-current/);
+  // No pressed state: it is a hint that matches, not a selected control.
+  await expect(example).not.toHaveAttribute("aria-pressed", "true");
+});
+
+test("typing a value nobody listed goes through the template, with no borrowed reason", async ({
+  page,
+}) => {
+  const frame = await open(page, SAMPLE_PAYLOAD);
+
+  await frame.locator(".uu-open-input").fill("사무적이지만 딱딱하지 않게");
+  await expect(prompt(frame)).toContainText("문체는 사무적이지만 딱딱하지 않게으로 쓴다.");
+  // The model's reason belonged to its own option, not to the user's wording.
+  await expect(prompt(frame)).not.toContainText("담백한 문체로 쓴다.");
+});
+
+test("editing a pressed example makes the value the user's own", async ({ page }) => {
+  const frame = await open(page, SAMPLE_PAYLOAD);
+
+  await frame.locator(".uu-example", { hasText: "담백하게" }).click();
+  await expect(prompt(frame)).toContainText("담백한 문체로 쓴다.");
+
+  // One character away from the example, and the sentence changes with it.
+  await frame.locator(".uu-open-input").fill("담백하게, 다만 건조하지 않게");
+  await expect(prompt(frame)).toContainText("문체는 담백하게, 다만 건조하지 않게으로 쓴다.");
+  await expect(prompt(frame)).not.toContainText("담백한 문체로 쓴다.");
+});
+
+test("emptying the box removes the line entirely", async ({ page }) => {
+  const frame = await open(page, SAMPLE_PAYLOAD);
+  const before = await prompt(frame).innerText();
+
+  await frame.locator(".uu-open-input").fill("아무 값");
+  await expect(prompt(frame)).not.toHaveText(before);
+
+  await frame.locator(".uu-open-input").fill("");
+  await expect(prompt(frame)).toHaveText(before);
+});
+
+test("whitespace alone counts as empty", async ({ page }) => {
+  const frame = await open(page, SAMPLE_PAYLOAD);
+  const before = await prompt(frame).innerText();
+
+  await frame.locator(".uu-open-input").fill("   ");
+  await expect(prompt(frame)).toHaveText(before);
 });
 
 // ── symptoms ───────────────────────────────────────────────────────────────
@@ -515,7 +586,7 @@ const SYMPTOM_PAYLOAD = {
             {
               id: "coat",
               label: "털색",
-              type: "select",
+              type: "closed",
               options: [{ value: "black", label: "검정", emit: "털색은 검은색." }],
             },
           ],
@@ -625,8 +696,10 @@ test("refold asks the conversation rather than calling a tool", async ({ page })
 
   await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
 
-  // Nothing is asked of the server: the model is only ever reached as a caller.
-  expect(await page.evaluate(() => window.__harness.toolCalls.length)).toBe(0);
+  // Nothing is asked of the server to re-extract: the model is only ever reached
+  // as a caller. (`list_presets` may have run on mount; that is not extraction.)
+  const named = await page.evaluate(() => window.__harness.toolCalls.map((c) => c.name));
+  expect(named).not.toContain("unfold");
 
   const sent = await page.evaluate(() => window.__harness.sent[0]);
   expect(sent.role).toBe("user");
@@ -673,4 +746,271 @@ test("uses no emoji anywhere in its own chrome", async ({ page }) => {
   const emoji = /\p{Extended_Pictographic}/u;
   expect(emoji.test(list)).toBe(false);
   expect(emoji.test(result)).toBe(false);
+});
+
+// ── the goal ───────────────────────────────────────────────────────────────
+
+/** The same payload, plus a reading the axes were built for. */
+const WITH_GOAL = structuredClone(PAYLOAD);
+WITH_GOAL.structuredContent.unfolded.goal = {
+  selected: "사진처럼 사실적인 그림",
+  alternatives: ["만화풍 그림", "수채화 느낌의 그림"],
+};
+
+test("no goal field when the request had only one reading", async ({ page }) => {
+  const frame = await open(page);
+  await expect(frame.locator(".uu-goal")).toHaveCount(0);
+});
+
+test("shows the reading the axes were built for, above the axes", async ({ page }) => {
+  const frame = await open(page, WITH_GOAL);
+
+  await expect(frame.locator(".uu-goal-text")).toHaveText("사진처럼 사실적인 그림");
+
+  // It governs the axes, so it sits above them rather than among them.
+  const goalY = (await frame.locator(".uu-goal").boundingBox()).y;
+  const firstAxisY = (await frame.locator(".uu-row").first().boundingBox()).y;
+  expect(goalY).toBeLessThan(firstAxisY);
+});
+
+test("the goal is in the prompt from the start, on the line below the request", async ({
+  page,
+}) => {
+  const frame = await open(page, WITH_GOAL);
+  const text = await prompt(frame).innerText();
+  const lines = text.split("\n");
+
+  expect(lines[0]).toBe("고양이 이미지 만들어줘");
+  expect(lines[1]).toBe("사진처럼 사실적인 그림");
+});
+
+test("alternatives stay closed until asked for, and never reach the prompt", async ({ page }) => {
+  const frame = await open(page, WITH_GOAL);
+
+  await expect(frame.locator(".uu-goal-alt")).toHaveCount(0);
+  expect(await prompt(frame).innerText()).not.toContain("만화풍");
+
+  await frame.locator(".uu-goal-current").click();
+  await expect(frame.locator(".uu-goal-alt")).toHaveText(["만화풍 그림", "수채화 느낌의 그림"]);
+
+  // Still not in the prompt — only the taken reading is instruction.
+  expect(await prompt(frame).innerText()).not.toContain("만화풍");
+});
+
+test("switching the goal asks the conversation, and says what it costs first", async ({ page }) => {
+  const frame = await open(page, WITH_GOAL);
+  await frame.locator(".uu-goal-current").click();
+
+  // The cost is stated before the click, not after.
+  await expect(frame.locator(".uu-goal-open .uu-note")).toContainText("사라집니다");
+
+  await frame.locator(".uu-goal-alt", { hasText: "만화풍 그림" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
+
+  // Same route as refold: no server tool is asked to build the new axes.
+  const named = await page.evaluate(() => window.__harness.toolCalls.map((c) => c.name));
+  expect(named).not.toContain("unfold");
+
+  const sent = await page.evaluate(() => window.__harness.sent[0]);
+  expect(sent.role).toBe("user");
+  expect(sent.text).toContain("고양이 이미지 만들어줘");
+  expect(sent.text).toContain("만화풍 그림");
+});
+
+test("a reading nobody offered can be typed", async ({ page }) => {
+  const frame = await open(page, WITH_GOAL);
+  await frame.locator(".uu-goal-current").click();
+
+  // Nothing typed yet, so there is nothing to switch to.
+  await expect(frame.locator(".uu-goal-go")).toBeDisabled();
+
+  await frame.locator(".uu-goal-own .uu-input").fill("점묘화 느낌의 그림");
+  await expect(frame.locator(".uu-goal-go")).toBeEnabled();
+  await frame.locator(".uu-goal-go").click();
+
+  await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
+  const sent = await page.evaluate(() => window.__harness.sent[0]);
+  expect(sent.text).toContain("점묘화 느낌의 그림");
+});
+
+test("the current reading is not offered as something to switch to", async ({ page }) => {
+  const frame = await open(page, WITH_GOAL);
+  await frame.locator(".uu-goal-current").click();
+
+  const alts = await frame.locator(".uu-goal-alt").allInnerTexts();
+  expect(alts).not.toContain("사진처럼 사실적인 그림");
+});
+
+test("a superseded widget cannot switch the goal either", async ({ page }) => {
+  const frame = await open(page, WITH_GOAL);
+
+  await page.evaluate(() => {
+    const bc = new BroadcastChannel("unknown-unknowns");
+    bc.postMessage({ seq: Number.MAX_SAFE_INTEGER });
+    bc.close();
+  });
+
+  await expect(frame.locator(".uu-goal-current")).toBeDisabled();
+});
+
+// ── presets ────────────────────────────────────────────────────────────────
+
+/** Open with canned answers for the app-only preset tools. */
+async function openWithPresets(page, responses, payload = PAYLOAD) {
+  await page.addInitScript((r) => {
+    window.__toolResponses = r;
+  }, responses);
+  return open(page, payload);
+}
+
+const TWO_PRESETS = {
+  list_presets: {
+    presets: [
+      { id: "p1", name: "주간보고 정리", uses: 4, lastUsedAt: 200 },
+      { id: "p2", name: "회의록 요약", uses: 1, lastUsedAt: 100 },
+    ],
+  },
+};
+
+/** What `load_preset` hands back: axes already written, values as stand-ins. */
+const LOADED = {
+  ...TWO_PRESETS,
+  load_preset: {
+    found: true,
+    preset: { id: "p1", name: "주간보고 정리" },
+    locale: "ko",
+    unfolded: {
+      title: "주간보고 정리",
+      intent: "주간보고 정리해줘",
+      sections: [
+        {
+          id: "form",
+          label: "형식",
+          axes: [
+            {
+              id: "structure",
+              label: "구조",
+              type: "closed",
+              options: [
+                { value: "first", label: "결론 먼저", emit: "결론을 먼저 쓴다." },
+                { value: "last", label: "결론 나중", emit: "결론을 마지막에 쓴다." },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    selections: { structure: "first" },
+  },
+};
+
+test("no preset row where there is nowhere to save", async ({ page }) => {
+  // No `__toolResponses`, so `list_presets` throws — the remote Worker's case.
+  const frame = await open(page);
+  await expect(frame.locator(".uu-presets")).toHaveCount(0);
+});
+
+test("lists saved presets, most recently used first", async ({ page }) => {
+  const frame = await openWithPresets(page, TWO_PRESETS);
+
+  await frame.locator(".uu-preset-current").click();
+  await expect(frame.locator(".uu-preset-name")).toHaveText(["주간보고 정리", "회의록 요약"]);
+});
+
+test("loading a preset replaces the axes without asking the conversation", async ({ page }) => {
+  const frame = await openWithPresets(page, LOADED);
+
+  await frame.locator(".uu-preset-current").click();
+  await frame.locator(".uu-preset-name", { hasText: "주간보고 정리" }).click();
+
+  // The new axes are on screen and the old ones are gone.
+  await expect(frame.locator(".uu-label").filter({ hasText: "구조" })).toBeVisible();
+  await expect(frame.locator(".uu-label").filter({ hasText: "털색" })).toHaveCount(0);
+
+  // No model in the loop: the widget called the tool directly.
+  expect(await page.evaluate(() => window.__harness.sent.length)).toBe(0);
+  const calls = await page.evaluate(() => window.__harness.toolCalls.map((c) => c.name));
+  expect(calls).toContain("load_preset");
+});
+
+test("a loaded value reads as decided-for-you, not as this-time choice", async ({ page }) => {
+  const frame = await openWithPresets(page, LOADED);
+  await frame.locator(".uu-preset-current").click();
+  await frame.locator(".uu-preset-name", { hasText: "주간보고 정리" }).click();
+
+  const chip = frame.locator(".uu-chip", { hasText: "결론 먼저" });
+  await expect(chip).toHaveClass(/is-default/);
+  await expect(chip).not.toHaveClass(/is-on/);
+
+  // Touching it makes it theirs.
+  await chip.click();
+  await expect(chip).toHaveClass(/is-on/);
+});
+
+test("a loaded preset still reaches the prompt", async ({ page }) => {
+  const frame = await openWithPresets(page, LOADED);
+  await frame.locator(".uu-preset-current").click();
+  await frame.locator(".uu-preset-name", { hasText: "주간보고 정리" }).click();
+
+  await expect(prompt(frame)).toContainText("주간보고 정리해줘");
+  await expect(prompt(frame)).toContainText("결론을 먼저 쓴다.");
+});
+
+test("loading leaves the source box empty — that is the only thing left to do", async ({
+  page,
+}) => {
+  const frame = await openWithPresets(page, LOADED);
+  await frame.locator(".uu-preset-current").click();
+  await frame.locator(".uu-preset-name", { hasText: "주간보고 정리" }).click();
+
+  await expect(frame.locator(".uu-textarea").last()).toHaveValue("");
+});
+
+test("saving asks for a name and nothing else, and never sends the material", async ({ page }) => {
+  const frame = await openWithPresets(page, {
+    ...TWO_PRESETS,
+    save_preset: { saved: true, id: "new", name: "내 설정" },
+  });
+
+  // Material in the box, and a choice made.
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await frame.locator(".uu-textarea").last().fill("예산 동결 결정");
+
+  await resultTab(frame).click();
+  await frame.locator(".uu-preset-save .uu-btn").click();
+  await frame.locator(".uu-preset-save .uu-input").fill("내 설정");
+  await frame.locator(".uu-preset-save .uu-btn", { hasText: "저장" }).click();
+
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.__harness.toolCalls.filter((c) => c.name === "save_preset").length,
+      ),
+    )
+    .toBe(1);
+
+  const call = await page.evaluate(
+    () => window.__harness.toolCalls.find((c) => c.name === "save_preset").arguments,
+  );
+  expect(call.name).toBe("내 설정");
+  expect(call.selections).toContain("black");
+  // The material was never an argument to begin with.
+  expect(JSON.stringify(call)).not.toContain("예산 동결");
+});
+
+test("overwrite is offered only once the state came from a preset", async ({ page }) => {
+  const frame = await openWithPresets(page, LOADED);
+
+  await resultTab(frame).click();
+  await frame.locator(".uu-preset-save .uu-btn").click();
+  await expect(frame.locator(".uu-preset-save .uu-btn", { hasText: "덮어쓰기" })).toHaveCount(0);
+
+  // Load one, and now there is something to overwrite.
+  await frame.locator(".uu-tab", { hasText: "목록" }).click();
+  await frame.locator(".uu-preset-current").click();
+  await frame.locator(".uu-preset-name", { hasText: "주간보고 정리" }).click();
+
+  await resultTab(frame).click();
+  await expect(frame.locator(".uu-preset-save .uu-btn", { hasText: "덮어쓰기" })).toBeVisible();
+  await expect(frame.locator(".uu-preset-save .uu-btn", { hasText: "새로 저장" })).toBeVisible();
 });

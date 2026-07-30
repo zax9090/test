@@ -14,7 +14,10 @@
  * count beside a heading would read as a target.
  */
 
-import type { ResolvedAxis, Selection } from "../lib/assemble.js";
+import { useState } from "preact/hooks";
+
+import type { AxisState } from "../lib/schema.js";
+import type { ResolvedAxis } from "../lib/assemble.js";
 import type { Section, Symptom } from "../lib/schema.js";
 import type { Strings } from "./i18n.js";
 import { AxisRow } from "./AxisRow.js";
@@ -23,7 +26,11 @@ import { Icon, STATUS_ICON } from "./icons.js";
 interface AxisListProps {
   sections: Section[];
   resolved: ResolvedAxis[];
-  onChange: (axisId: string, value: Selection) => void;
+  onChange: (axisId: string, next: AxisState) => void;
+  /** Add an empty user axis to a section, and hand back its id to focus. */
+  onAddAxis: (sectionId: string) => void;
+  onRemoveAxis: (axisId: string) => void;
+  onAddSection: (label: string) => void;
   symptoms: Symptom[];
   chosenSymptoms: string[];
   onSymptom: (id: string) => void;
@@ -37,10 +44,54 @@ interface AxisListProps {
   t: Strings;
 }
 
+/** The `+ 묶음 추가` line, and the name box it turns into. */
+function NewSection({ onAdd, t }: { onAdd: (label: string) => void; t: Strings }) {
+  const [naming, setNaming] = useState(false);
+  const [label, setLabel] = useState("");
+
+  if (!naming) {
+    return (
+      <button type="button" className="uu-add uu-add-section" onClick={() => setNaming(true)}>
+        {t.sectionAdd}
+      </button>
+    );
+  }
+
+  // An empty name adds nothing: a group with no heading is indistinguishable
+  // from the ungrouped rows around it.
+  const commit = () => {
+    const trimmed = label.trim();
+    if (trimmed) onAdd(trimmed);
+    setLabel("");
+    setNaming(false);
+  };
+
+  return (
+    <div className="uu-new-section">
+      <input
+        type="text"
+        className="uu-input"
+        value={label}
+        placeholder={t.sectionNamePlaceholder}
+        autoFocus
+        onInput={(e) => setLabel((e.target as HTMLInputElement).value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") setNaming(false);
+        }}
+        onBlur={commit}
+      />
+    </div>
+  );
+}
+
 export function AxisList({
   sections,
   resolved,
   onChange,
+  onAddAxis,
+  onRemoveAxis,
+  onAddSection,
   symptoms,
   chosenSymptoms,
   onSymptom,
@@ -70,14 +121,32 @@ export function AxisList({
                 key={axis.id}
                 axis={axis}
                 status={r.status}
+                state={r.state}
                 values={r.values}
                 onChange={onChange}
+                {...(axis.origin === "user" ? { onRemove: onRemoveAxis } : {})}
                 t={t}
               />
             );
           })}
+
+          {/*
+            Adding inside the group is the point. Looking at background and
+            lighting is what makes "humidity" occur to someone; a blank line at
+            the bottom of the whole list does not.
+          */}
+          <button
+            type="button"
+            className="uu-add uu-add-axis"
+            onClick={() => onAddAxis(section.id)}
+          >
+            {t.axisAdd}
+          </button>
         </div>
       ))}
+
+      {/* The way out when an item belongs to no group that exists yet. */}
+      <NewSection onAdd={onAddSection} t={t} />
 
       {/*
         Not an axis — these say what is wrong with the result rather than what it

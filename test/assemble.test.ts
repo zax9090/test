@@ -20,7 +20,7 @@ const cat: Unfolded = {
         {
           id: "coat",
           label: "털색",
-          type: "select",
+          type: "closed",
           options: [
             {
               value: "black",
@@ -34,7 +34,7 @@ const cat: Unfolded = {
         {
           id: "pose",
           label: "자세",
-          type: "select",
+          type: "closed",
           options: [
             { value: "lying", label: "누움", emit: "누워 있는 자세로 그린다." },
             { value: "sitting", label: "앉음", emit: "앉아 있는 자세로 그린다." },
@@ -183,6 +183,40 @@ describe("order", () => {
     expect(text.indexOf("가로 512px")).toBeLessThan(text.indexOf("털색은 검은색"));
   });
 
+  it("puts the goal on the line below the intent, above every axis", () => {
+    const withGoal: Unfolded = {
+      ...cat,
+      goal: { selected: "사진처럼 사실적인 그림", alternatives: ["만화풍 그림"] },
+    };
+    const text = assemble(withGoal, state({ selections: { coat: "black" } }));
+
+    expect(text.split("\n")[0]).toBe(cat.intent);
+    expect(text.split("\n")[1]).toBe("사진처럼 사실적인 그림");
+    expect(text.indexOf("사실적인")).toBeLessThan(text.indexOf("털색은 검은색"));
+  });
+
+  it("carries the goal even with nothing decided — it is instruction, not an axis", () => {
+    const withGoal: Unfolded = {
+      ...cat,
+      goal: { selected: "사실적인 그림", alternatives: ["만화풍"] },
+    };
+    expect(assemble(withGoal, state())).toBe(`${cat.intent}\n사실적인 그림`);
+  });
+
+  it("never mentions the alternatives that were not taken", () => {
+    const withGoal: Unfolded = {
+      ...cat,
+      goal: { selected: "사실적인 그림", alternatives: ["만화풍 그림", "수채화 느낌"] },
+    };
+    const text = assemble(withGoal, state({ selections: { coat: "black" } }));
+    expect(text).not.toContain("만화풍");
+    expect(text).not.toContain("수채화");
+  });
+
+  it("adds nothing when there is no goal", () => {
+    expect(assemble(cat, state())).toBe(cat.intent);
+  });
+
   it("never writes a section name into the prompt", () => {
     const text = assemble(cat, state({ selections: { coat: "black", width: 512 } }));
     expect(text).not.toContain("대상");
@@ -224,6 +258,45 @@ describe("axis status", () => {
     expect(text).toContain("털색은 검은색"); // set
     expect(text).toContain("누워 있는 자세"); // partial — decided on their behalf
     expect(text).not.toContain("따뜻한"); // unset — left to the AI
+  });
+
+  it("marks a value that came from a preset as decided-on-your-behalf", () => {
+    const resolved = resolveAxes(cat, state({ loaded: { coat: "white" } }));
+    expect(resolved[0]!.status).toBe("partial");
+    expect(resolved[0]!.line).toBe("털색은 흰색으로 한다.");
+  });
+
+  it("lets a preset value outrank a model default — it is the user's own answer", () => {
+    const withDefault = withAxis(cat, "coat", { default: "black" });
+    const resolved = resolveAxes(withDefault, state({ loaded: { coat: "white" } }));
+    expect(resolved[0]!.line).toBe("털색은 흰색으로 한다.");
+  });
+
+  it("lets this-time choice outrank a preset value", () => {
+    const resolved = resolveAxes(
+      cat,
+      state({ loaded: { coat: "white" }, selections: { coat: "black" } }),
+    );
+    expect(resolved[0]!.status).toBe("set");
+    expect(resolved[0]!.line).toContain("검은색");
+  });
+
+  it("copies a preset value into the prompt, like any other stand-in", () => {
+    expect(assemble(cat, state({ loaded: { coat: "white" } }))).toBe(
+      `${cat.intent}\n\n털색은 흰색으로 한다.`,
+    );
+  });
+
+  it("carries a preset value for a multi axis, which a default could not hold", () => {
+    const resolved = resolveAxes(cat, state({ loaded: { mood: ["warm", "quiet"] } }));
+    const byId = Object.fromEntries(resolved.map((r) => [r.axis.id, r]));
+    expect(byId.mood?.status).toBe("partial");
+    expect(byId.mood?.values).toEqual(["warm", "quiet"]);
+  });
+
+  it("ignores a preset value for an axis that no longer exists", () => {
+    expect(() => assemble(cat, state({ loaded: { gone: "x" } }))).not.toThrow();
+    expect(assemble(cat, state({ loaded: { gone: "x" } }))).toBe(cat.intent);
   });
 
   it("ignores a default that points at a value that no longer exists", () => {

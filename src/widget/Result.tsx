@@ -18,7 +18,8 @@
 
 import { useState } from "react";
 
-import type { ResolvedAxis, Selection } from "../lib/assemble.js";
+import type { AxisState } from "../lib/schema.js";
+import type { ResolvedAxis } from "../lib/assemble.js";
 import type { Fix } from "../lib/schema.js";
 import { assembledLength } from "../lib/assemble.js";
 import type { Strings } from "./i18n.js";
@@ -29,7 +30,7 @@ interface ResultProps {
   text: string;
   resolved: ResolvedAxis[];
   fixes: Fix[];
-  onChange: (axisId: string, value: Selection) => void;
+  onChange: (axisId: string, next: AxisState) => void;
   onApplyFix: (fix: Fix) => void;
   onCopy: () => void;
   onSend: () => void;
@@ -53,7 +54,7 @@ function OpenableLine({
   label: string;
   open: boolean;
   onToggle: () => void;
-  onChange: (axisId: string, value: Selection) => void;
+  onChange: (axisId: string, next: AxisState) => void;
   t: Strings;
 }) {
   return (
@@ -67,6 +68,7 @@ function OpenableLine({
           <AxisRow
             axis={item.axis}
             status={item.status}
+            state={item.state}
             values={item.values}
             onChange={onChange}
             t={t}
@@ -120,6 +122,7 @@ export function Result({
                   <AxisRow
                     axis={r.axis}
                     status={r.status}
+                    state={r.state}
                     values={r.values}
                     onChange={onChange}
                     t={t}

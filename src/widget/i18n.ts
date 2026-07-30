@@ -33,6 +33,27 @@ export interface Strings {
   refoldContext: string;
   refoldAsk: (intent: string) => string;
   outOfRange: (min: string, max: string) => string;
+  goal: string;
+  goalOwnPlaceholder: string;
+  goalSwitch: string;
+  goalSwitching: string;
+  goalCost: string;
+  goalAsk: (intent: string, reading: string) => string;
+  presets: string;
+  presetPick: string;
+  presetSave: string;
+  presetSaveConfirm: string;
+  presetSaveNew: string;
+  presetOverwrite: string;
+  presetDelete: string;
+  presetNamePlaceholder: string;
+  presetLoaded: string;
+  axisAdd: string;
+  axisRemove: string;
+  sectionAdd: string;
+  axisLabelPlaceholder: string;
+  axisValuePlaceholder: string;
+  sectionNamePlaceholder: string;
 }
 
 const ko: Strings = {
@@ -42,7 +63,7 @@ const ko: Strings = {
   more: (n) => `더 정하기 (${n})`,
   less: "접기",
   freeform: "더 넣을 말",
-  freeformPlaceholder: "",
+  freeformPlaceholder: "축으로 잡히지 않는 요구가 있다면",
   source: "자료",
   symptoms: "걸리는 점",
   sourcePlaceholder: "",
@@ -58,6 +79,27 @@ const ko: Strings = {
   refoldContext: "사용자가 unknown-unknowns 위젯의 자료 칸에 아래 자료를 넣었습니다.",
   refoldAsk: (intent) => `방금 넣은 자료에 맞춰 "${intent}"를 다시 펼쳐줘.`,
   outOfRange: (min, max) => `보통 ${min}~${max} 범위입니다`,
+  goal: "목표",
+  goalOwnPlaceholder: "다르게 읽기",
+  goalSwitch: "이걸로",
+  goalSwitching: "새 축을 뽑는 중",
+  goalCost: "목표를 바꾸면 축이 새로 만들어져서 지금 고른 값은 사라집니다",
+  goalAsk: (intent, reading) => `"${intent}"를 "${reading}"으로 보고 다시 펼쳐줘.`,
+  presets: "프리셋",
+  presetPick: "불러오기",
+  presetSave: "프리셋으로 저장",
+  presetSaveConfirm: "저장",
+  presetSaveNew: "새로 저장",
+  presetOverwrite: "덮어쓰기",
+  presetDelete: "삭제",
+  presetNamePlaceholder: "이름",
+  presetLoaded: "프리셋에서 불러옴",
+  axisAdd: "+ 항목 추가",
+  axisRemove: "삭제",
+  sectionAdd: "+ 묶음 추가",
+  axisLabelPlaceholder: "항목 이름 (예: 털 길이)",
+  axisValuePlaceholder: "이 항목을 어떻게 할지",
+  sectionNamePlaceholder: "묶음 이름",
 };
 
 const en: Strings = {
@@ -67,7 +109,7 @@ const en: Strings = {
   more: (n) => `Decide more (${n})`,
   less: "Collapse",
   freeform: "Anything else",
-  freeformPlaceholder: "",
+  freeformPlaceholder: "Anything the axes do not cover",
   source: "Source",
   symptoms: "What's off",
   sourcePlaceholder: "",
@@ -84,6 +126,27 @@ const en: Strings = {
     "The user put the following material into the unknown-unknowns widget's source box.",
   refoldAsk: (intent) => `Unfold "${intent}" again, fitted to the material I just added.`,
   outOfRange: (min, max) => `Usually between ${min} and ${max}`,
+  goal: "Goal",
+  goalOwnPlaceholder: "Read it differently",
+  goalSwitch: "Use this",
+  goalSwitching: "Building new axes",
+  goalCost: "Switching the goal rebuilds the axes, so the values you picked will be lost",
+  goalAsk: (intent, reading) => `Unfold "${intent}" again, read as "${reading}".`,
+  presets: "Presets",
+  presetPick: "Load",
+  presetSave: "Save as preset",
+  presetSaveConfirm: "Save",
+  presetSaveNew: "Save as new",
+  presetOverwrite: "Overwrite",
+  presetDelete: "Delete",
+  presetNamePlaceholder: "Name",
+  presetLoaded: "from a preset",
+  axisAdd: "+ Add an item",
+  axisRemove: "Remove",
+  sectionAdd: "+ Add a group",
+  axisLabelPlaceholder: "Item name (e.g. coat length)",
+  axisValuePlaceholder: "What to do about it",
+  sectionNamePlaceholder: "Group name",
 };
 
 export function strings(locale: Locale): Strings {

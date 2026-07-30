@@ -19,6 +19,12 @@ declare global {
       ready: boolean;
     };
     __payload: unknown;
+    /**
+     * Canned answers for `callServerTool`, keyed by tool name. A test sets this
+     * before navigating; anything not listed still throws, so an unexpected call
+     * stays loud.
+     */
+    __toolResponses?: Record<string, unknown>;
   }
 }
 
@@ -58,11 +64,19 @@ iframe.addEventListener("load", async () => {
     return {};
   };
 
-  // Kept so a stray `callServerTool` would be visible rather than silent — the
-  // widget should not be making any.
+  // The preset tools are app-only, so the widget calls them directly. Answers
+  // come from `__toolResponses`; an unstubbed name still throws, which keeps an
+  // unexpected call loud rather than silently resolving to nothing.
   bridge.oncalltool = async ({ name, arguments: args }) => {
     window.__harness.toolCalls.push({ name, arguments: args });
-    throw new Error(`unexpected server tool call: ${name}`);
+
+    const canned = window.__toolResponses?.[name];
+    if (canned === undefined) throw new Error(`unexpected server tool call: ${name}`);
+
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify(canned) }],
+      structuredContent: canned as Record<string, unknown>,
+    };
   };
 
   bridge.onupdatemodelcontext = async ({ content }) => {

@@ -68,6 +68,14 @@ const baseInput = {
     .string()
     .optional()
     .describe("Material the task is about — document, transcript, data. Optional."),
+  goal: z
+    .string()
+    .optional()
+    .describe(
+      "A reading of the request the user picked or typed, when they are switching " +
+        "away from the one they were given. Build the axes for this reading instead " +
+        "of choosing one. Omit on a first call.",
+    ),
 };
 
 export interface UnfoldPayload {
@@ -129,11 +137,12 @@ export interface UnfoldHandle {
 interface UnfoldArgs {
   request: string;
   source?: string;
+  goal?: string;
   unfolded?: string;
 }
 
 async function handle(server: McpServer, args: UnfoldArgs) {
-  const { request, source, unfolded: supplied } = args;
+  const { request, source, goal, unfolded: supplied } = args;
   const cleanSource = clampSource(source);
 
   // On a host without sampling this is the only route. On one with sampling the
@@ -148,6 +157,7 @@ async function handle(server: McpServer, args: UnfoldArgs) {
   const { unfolded } = await extractViaSampling(server.server, {
     request,
     source: cleanSource,
+    goal,
   });
   return toolResult(payloadFor(unfolded, request, cleanSource));
 }
