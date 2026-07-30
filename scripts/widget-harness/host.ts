@@ -16,6 +16,8 @@ declare global {
       toolCalls: Array<{ name: string; arguments: unknown }>;
       /** Text handed to `ui/update-model-context`. */
       context: string[];
+      /** Structure handed to the same call, which travels beside the text. */
+      structured: unknown[];
       ready: boolean;
     };
     __payload: unknown;
@@ -28,7 +30,7 @@ declare global {
   }
 }
 
-window.__harness = { sent: [], toolCalls: [], context: [], ready: false };
+window.__harness = { sent: [], toolCalls: [], context: [], structured: [], ready: false };
 
 const iframe = document.createElement("iframe");
 iframe.id = "app";
@@ -79,8 +81,11 @@ iframe.addEventListener("load", async () => {
     };
   };
 
-  bridge.onupdatemodelcontext = async ({ content }) => {
-    window.__harness.context.push(content.map((c: { text?: string }) => c.text ?? "").join(""));
+  bridge.onupdatemodelcontext = async ({ content, structuredContent }) => {
+    if (content) {
+      window.__harness.context.push(content.map((c: { text?: string }) => c.text ?? "").join(""));
+    }
+    if (structuredContent) window.__harness.structured.push(structuredContent);
     return {};
   };
 

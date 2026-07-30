@@ -1014,3 +1014,204 @@ test("overwrite is offered only once the state came from a preset", async ({ pag
   await expect(frame.locator(".uu-preset-save .uu-btn", { hasText: "덮어쓰기" })).toBeVisible();
   await expect(frame.locator(".uu-preset-save .uu-btn", { hasText: "새로 저장" })).toBeVisible();
 });
+
+// ── axes that depend on each other ─────────────────────────────────────────
+
+const LINKED = {
+  content: [{ type: "text", text: "{}" }],
+  structuredContent: {
+    locale: "ko",
+    unfolded: {
+      title: "웹사이트",
+      intent: "웹사이트 설계해줘",
+      sections: [
+        {
+          id: "shape",
+          label: "형태",
+          axes: [
+            {
+              id: "deliverable",
+              label: "결과물",
+              type: "closed",
+              options: [
+                { value: "code", label: "코드", emit: "코드로 만든다." },
+                { value: "plan", label: "기획서", emit: "기획서로 쓴다." },
+              ],
+            },
+            {
+              id: "stack",
+              label: "스택",
+              type: "closed",
+              showIf: { deliverable: ["code"] },
+              options: [{ value: "react", label: "React", emit: "React로 만든다." }],
+            },
+            {
+              id: "count",
+              label: "축 개수",
+              type: "closed",
+              conflicts: [
+                {
+                  with: { specificity: "over" },
+                  reason: "이미 구체적인 요청에는 축이 필요 없습니다",
+                },
+              ],
+              options: [{ value: "8", label: "8개", emit: "축을 8개 만든다." }],
+            },
+            {
+              id: "specificity",
+              label: "구체성",
+              type: "closed",
+              options: [{ value: "over", label: "이미 구체적", emit: "이미 구체적이다." }],
+            },
+          ],
+        },
+      ],
+    },
+  },
+};
+
+test("a dependent axis shows until its premise is actually answered", async ({ page }) => {
+  const frame = await open(page, LINKED);
+  // Hiding it before the governing axis is decided would make it vanish for a
+  // reason the user cannot see yet.
+  await expect(frame.locator(".uu-label").filter({ hasText: "스택" })).toBeVisible();
+});
+
+test("an axis that stops applying disappears, and comes back", async ({ page }) => {
+  const frame = await open(page, LINKED);
+
+  await frame.locator(".uu-chip", { hasText: "기획서" }).click();
+  await expect(frame.locator(".uu-label").filter({ hasText: "스택" })).toHaveCount(0);
+
+  await frame.locator(".uu-chip", { hasText: "코드" }).click();
+  await expect(frame.locator(".uu-label").filter({ hasText: "스택" })).toBeVisible();
+});
+
+test("a hidden axis contributes nothing to the prompt", async ({ page }) => {
+  const frame = await open(page, LINKED);
+
+  await frame.locator(".uu-chip", { hasText: "코드" }).click();
+  await frame.locator(".uu-chip", { hasText: "React" }).click();
+  await expect(prompt(frame)).toContainText("React로 만든다.");
+
+  // Switching away hides the axis; its sentence goes with it.
+  await frame.locator(".uu-chip", { hasText: "기획서" }).click();
+  await expect(prompt(frame)).not.toContainText("React로 만든다.");
+});
+
+test("a contradiction is named where the choice was made", async ({ page }) => {
+  const frame = await open(page, LINKED);
+
+  await expect(frame.locator(".uu-clash")).toHaveCount(0);
+
+  await frame.locator(".uu-chip", { hasText: "8개" }).click();
+  // One side alone is not a contradiction.
+  await expect(frame.locator(".uu-clash")).toHaveCount(0);
+
+  await frame.locator(".uu-chip", { hasText: "이미 구체적" }).click();
+  await expect(frame.locator(".uu-clash").first()).toContainText("축이 필요 없습니다");
+});
+
+test("both rows in a contradiction are marked, not just one", async ({ page }) => {
+  const frame = await open(page, LINKED);
+  await frame.locator(".uu-chip", { hasText: "8개" }).click();
+  await frame.locator(".uu-chip", { hasText: "이미 구체적" }).click();
+
+  await expect(frame.locator('.uu-row.is-clashing[data-axis="count"]')).toHaveCount(1);
+  await expect(frame.locator('.uu-row.is-clashing[data-axis="specificity"]')).toHaveCount(1);
+});
+
+test("a contradiction informs but never blocks", async ({ page }) => {
+  const frame = await open(page, LINKED);
+  await frame.locator(".uu-chip", { hasText: "8개" }).click();
+  await frame.locator(".uu-chip", { hasText: "이미 구체적" }).click();
+
+  // Both chips stay usable, and both sentences still reach the prompt. Refusing
+  // would only take away the case where someone knows and means it (P4).
+  await expect(frame.locator(".uu-chip", { hasText: "8개" })).toBeEnabled();
+  await expect(prompt(frame)).toContainText("축을 8개 만든다.");
+  await expect(prompt(frame)).toContainText("이미 구체적이다.");
+});
+
+test("clearing one side clears the warning", async ({ page }) => {
+  const frame = await open(page, LINKED);
+  await frame.locator(".uu-chip", { hasText: "8개" }).click();
+  await frame.locator(".uu-chip", { hasText: "이미 구체적" }).click();
+  await expect(frame.locator(".uu-clash").first()).toBeVisible();
+
+  await frame.locator(".uu-chip", { hasText: "이미 구체적" }).click();
+  await expect(frame.locator(".uu-clash")).toHaveCount(0);
+});
+
+// ── structure alongside the prompt ─────────────────────────────────────────
+
+test("send hands over the structure as well as the prose", async ({ page }) => {
+  const frame = await open(page);
+
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await resultTab(frame).click();
+  await frame.locator(".uu-btn", { hasText: "대화로 보내기" }).click();
+
+  await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__harness.structured.length)).toBe(1);
+
+  const report = await page.evaluate(() => window.__harness.structured[0]);
+  // Which axis each sentence came from — the thing the prose cannot say.
+  expect(report.chosen.coat.value).toBe("black");
+  expect(report.chosen.coat.kind).toBe("option");
+  expect(report.chosen.coat.section).toBe("subject");
+});
+
+test("the visible message stays the prompt the user read", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await resultTab(frame).click();
+
+  const shown = await prompt(frame).innerText();
+  await frame.locator(".uu-btn", { hasText: "대화로 보내기" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
+
+  // Structure is an addition, not a replacement: sending ids instead would leave
+  // the copy button nothing to copy (C18).
+  const sent = await page.evaluate(() => window.__harness.sent[0]);
+  expect(sent.text).toBe(shown);
+  expect(sent.text).toContain("털색은 검은색");
+});
+
+test("the structure tells untouched from decided-for-you", async ({ page }) => {
+  const frame = await open(page);
+  await resultTab(frame).click();
+  await frame.locator(".uu-btn", { hasText: "대화로 보내기" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.structured.length)).toBe(1);
+
+  const report = await page.evaluate(() => window.__harness.structured[0]);
+  // `light` carries a default, so it was decided but not by the user this time.
+  expect(Object.keys(report.standIn)).toContain("light");
+  expect(report.untouched).toContain("coat");
+  expect(report.untouched).not.toContain("light");
+});
+
+test("the structure never carries the material", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-textarea").last().fill("예산 동결 결정");
+  await resultTab(frame).click();
+  await frame.locator(".uu-btn", { hasText: "대화로 보내기" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.structured.length)).toBe(1);
+
+  const report = await page.evaluate(() => JSON.stringify(window.__harness.structured[0]));
+  expect(report).not.toContain("예산 동결");
+});
+
+test("a correction button is named in the structure", async ({ page }) => {
+  const frame = await open(page);
+  await resultTab(frame).click();
+
+  const fix = frame.locator(".uu-fixes .uu-chip").first();
+  const label = await fix.innerText();
+  await fix.click();
+  await frame.locator(".uu-btn", { hasText: "대화로 보내기" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.structured.length)).toBe(1);
+
+  const report = await page.evaluate(() => window.__harness.structured[0]);
+  expect(report.fixApplied).toBe(label);
+});

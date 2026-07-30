@@ -17,7 +17,7 @@
 import { useState } from "preact/hooks";
 
 import type { AxisState } from "../lib/schema.js";
-import type { ResolvedAxis } from "../lib/assemble.js";
+import type { ConflictReport, ResolvedAxis } from "../lib/assemble.js";
 import type { Section, Symptom } from "../lib/schema.js";
 import type { Strings } from "./i18n.js";
 import { AxisRow } from "./AxisRow.js";
@@ -31,6 +31,10 @@ interface AxisListProps {
   onAddAxis: (sectionId: string) => void;
   onRemoveAxis: (axisId: string) => void;
   onAddSection: (label: string) => void;
+  /** Live contradictions. Shown beside the rows they involve; never enforced. */
+  conflicts: ConflictReport[];
+  /** Axis ids that no longer apply given what is chosen. */
+  hidden: Set<string>;
   symptoms: Symptom[];
   chosenSymptoms: string[];
   onSymptom: (id: string) => void;
@@ -92,6 +96,8 @@ export function AxisList({
   onAddAxis,
   onRemoveAxis,
   onAddSection,
+  conflicts,
+  hidden,
   symptoms,
   chosenSymptoms,
   onSymptom,
@@ -115,18 +121,36 @@ export function AxisList({
 
           {section.axes.map((axis) => {
             const r = byId.get(axis.id);
-            if (!r) return null;
+            // An axis that no longer applies is not drawn. It is not a judgement
+            // about importance — it is a question this deliverable cannot answer.
+            if (!r || hidden.has(axis.id)) return null;
+
+            const clashes = conflicts.filter(
+              (c) => c.axisId === axis.id || c.against.includes(axis.id),
+            );
+
             return (
-              <AxisRow
-                key={axis.id}
-                axis={axis}
-                status={r.status}
-                state={r.state}
-                values={r.values}
-                onChange={onChange}
-                {...(axis.origin === "user" ? { onRemove: onRemoveAxis } : {})}
-                t={t}
-              />
+              <div key={axis.id}>
+                <AxisRow
+                  axis={axis}
+                  status={r.status}
+                  state={r.state}
+                  values={r.values}
+                  onChange={onChange}
+                  clashing={clashes.length > 0}
+                  {...(axis.origin === "user" ? { onRemove: onRemoveAxis } : {})}
+                  t={t}
+                />
+
+                {/* Said where the choice was made, not at the end. Every
+                    contradiction seen in real use was "I did not know" — so this
+                    informs and leaves the choice standing (P4). */}
+                {clashes.map((c) => (
+                  <div className="uu-clash" key={`${c.axisId}-${c.reason}`}>
+                    {c.reason}
+                  </div>
+                ))}
+              </div>
             );
           })}
 

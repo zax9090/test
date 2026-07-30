@@ -29,6 +29,8 @@ interface AxisRowProps {
   /** Values in play, for marking which example matches. */
   values: string[];
   onChange: (axisId: string, next: AxisState) => void;
+  /** In a live contradiction. Dimmed, and still fully usable (P4). */
+  clashing?: boolean;
   /** Only user-added axes can be removed; a model axis is emptied instead. */
   onRemove?: (axisId: string) => void;
   t: Strings;
@@ -201,7 +203,16 @@ function RangeInput({
   );
 }
 
-export function AxisRow({ axis, status, state, values, onChange, onRemove, t }: AxisRowProps) {
+export function AxisRow({
+  axis,
+  status,
+  state,
+  values,
+  onChange,
+  clashing,
+  onRemove,
+  t,
+}: AxisRowProps) {
   const selected = new Set(values);
   // A value nobody chose must not look like a chosen one. These rows are on
   // screen from the start, and a filled control reads as a preselection — which
@@ -225,7 +236,11 @@ export function AxisRow({ axis, status, state, values, onChange, onRemove, t }: 
   };
 
   return (
-    <div className="uu-row" data-axis={axis.id} data-origin={axis.origin ?? "model"}>
+    <div
+      className={`uu-row${clashing ? " is-clashing" : ""}`}
+      data-axis={axis.id}
+      data-origin={axis.origin ?? "model"}
+    >
       <div className="uu-label">{axis.label}</div>
 
       <div className="uu-values">

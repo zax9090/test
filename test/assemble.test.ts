@@ -3,11 +3,15 @@ import { describe, expect, it } from "vitest";
 import {
   assemble,
   assembledLength,
+  describeSelection,
   emptyState,
+  findConflicts,
+  isApplicable,
   resolveAxes,
+  type Selection,
   type State,
 } from "../src/lib/assemble.js";
-import type { Unfolded } from "../src/lib/schema.js";
+import { allAxes, type Unfolded } from "../src/lib/schema.js";
 
 const cat: Unfolded = {
   title: "고양이 이미지",
@@ -402,5 +406,293 @@ describe("serializable", () => {
     const s = state({ selections: { coat: "black", mood: ["warm"], width: 1024 } });
     const round = JSON.parse(JSON.stringify(cat)) as Unfolded;
     expect(assemble(round, s)).toBe(assemble(cat, s));
+  });
+});
+
+// ── axes that depend on each other ─────────────────────────────────────────
+
+describe("applicability and conflicts", () => {
+  const linked: Unfolded = {
+    title: "웹사이트",
+    intent: "웹사이트 설계해줘",
+    sections: [
+      {
+        id: "shape",
+        label: "형태",
+        axes: [
+          {
+            id: "deliverable",
+            label: "결과물",
+            type: "closed",
+            options: [
+              { value: "code", label: "코드", emit: "코드로 만든다." },
+              { value: "plan", label: "기획서", emit: "기획서로 쓴다." },
+            ],
+          },
+          {
+            id: "stack",
+            label: "스택",
+            type: "closed",
+            showIf: { deliverable: ["code"] },
+            options: [{ value: "react", label: "React", emit: "React로 만든다." }],
+          },
+          {
+            id: "count",
+            label: "축 개수",
+            type: "closed",
+            conflicts: [{ with: { specificity: "over" }, reason: "이미 구체적이면 축이 없다" }],
+            options: [{ value: "8", label: "8개", emit: "축을 8개 만든다." }],
+          },
+          {
+            id: "specificity",
+            label: "구체성",
+            type: "closed",
+            options: [{ value: "over", label: "이미 구체적", emit: "이미 구체적이다." }],
+          },
+        ],
+      },
+    ],
+  };
+
+  const resolve = (selections: Record<string, Selection>) =>
+    resolveAxes(linked, { selections, locale: "ko" });
+
+  const axisById = (id: string) => allAxes(linked).find((a) => a.id === id)!;
+
+  it("shows a dependent axis while its governing axis is unanswered", () => {
+    // Hiding before the premise is visible would make it vanish for a reason
+    // the user cannot yet see.
+    expect(isApplicable(axisById("stack"), resolve({}))).toBe(true);
+  });
+
+  it("hides an axis that stops applying", () => {
+    expect(isApplicable(axisById("stack"), resolve({ deliverable: "plan" }))).toBe(false);
+    expect(isApplicable(axisById("stack"), resolve({ deliverable: "code" }))).toBe(true);
+  });
+
+  it("leaves an independent axis always applicable", () => {
+    expect(isApplicable(axisById("deliverable"), resolve({ deliverable: "plan" }))).toBe(true);
+  });
+
+  it("reports a live contradiction, naming both sides", () => {
+    const found = findConflicts(linked, resolve({ count: "8", specificity: "over" }));
+    expect(found).toHaveLength(1);
+    expect(found[0]!.axisId).toBe("count");
+    expect(found[0]!.against).toEqual(["specificity"]);
+    expect(found[0]!.reason).toContain("이미 구체적");
+  });
+
+  it("reports nothing until both sides are actually chosen", () => {
+    expect(findConflicts(linked, resolve({ count: "8" }))).toEqual([]);
+    expect(findConflicts(linked, resolve({ specificity: "over" }))).toEqual([]);
+    expect(findConflicts(linked, resolve({}))).toEqual([]);
+  });
+
+  it("does not block the contradiction — both lines still reach the prompt", () => {
+    // Informing at the moment of choosing is the fix; refusing would only take
+    // away the case where someone knows and means it (P4, C20).
+    const text = assemble(linked, {
+      selections: { count: "8", specificity: "over" },
+      locale: "ko",
+    });
+    expect(text).toContain("축을 8개 만든다.");
+    expect(text).toContain("이미 구체적이다.");
+  });
+
+  it("ignores a rule pointing at an axis that no longer exists", () => {
+    const stale: Unfolded = {
+      ...linked,
+      sections: [
+        {
+          ...linked.sections[0]!,
+          axes: linked.sections[0]!.axes.filter((a) => a.id !== "specificity"),
+        },
+      ],
+    };
+    expect(() =>
+      findConflicts(stale, resolveAxes(stale, { selections: { count: "8" } })),
+    ).not.toThrow();
+    expect(findConflicts(stale, resolveAxes(stale, { selections: { count: "8" } }))).toEqual([]);
+  });
+
+  it("takes no notice of a typed value — no rule can have been written about it", () => {
+    const typed = resolve({ specificity: { kind: "typed", text: "over" } });
+    expect(findConflicts(linked, typed)).toEqual([]);
+  });
+});
+
+describe("an inapplicable axis contributes nothing", () => {
+  const linked: Unfolded = {
+    title: "웹사이트",
+    intent: "웹사이트 설계해줘",
+    sections: [
+      {
+        id: "shape",
+        label: "형태",
+        axes: [
+          {
+            id: "deliverable",
+            label: "결과물",
+            type: "closed",
+            options: [
+              { value: "code", label: "코드", emit: "코드로 만든다." },
+              { value: "plan", label: "기획서", emit: "기획서로 쓴다." },
+            ],
+          },
+          {
+            id: "stack",
+            label: "스택",
+            type: "closed",
+            showIf: { deliverable: ["code"] },
+            options: [{ value: "react", label: "React", emit: "React로 만든다." }],
+          },
+        ],
+      },
+    ],
+  };
+
+  it("drops the sentence of an axis that stopped applying", () => {
+    // The row is gone from the screen, so its line must be gone from the prompt.
+    // Leaving it in would put a sentence in the text that the user can no longer
+    // see to remove.
+    const text = assemble(linked, {
+      selections: { deliverable: "plan", stack: "react" },
+      locale: "ko",
+    });
+    expect(text).toContain("기획서로 쓴다.");
+    expect(text).not.toContain("React로 만든다.");
+  });
+
+  it("keeps it while the axis does apply", () => {
+    const text = assemble(linked, {
+      selections: { deliverable: "code", stack: "react" },
+      locale: "ko",
+    });
+    expect(text).toContain("React로 만든다.");
+  });
+
+  it("reports the axis as undecided rather than deleting it", () => {
+    const resolved = resolveAxes(linked, { selections: { deliverable: "plan", stack: "react" } });
+    const stack = resolved.find((r) => r.axis.id === "stack")!;
+    // Still in the list, so a value survives a temporary switch away and back.
+    expect(stack.applicable).toBe(false);
+    expect(stack.status).toBe("unset");
+    expect(stack.line).toBe("");
+  });
+
+  it("restores the value when the axis applies again", () => {
+    const selections = { deliverable: "code", stack: "react" };
+    expect(assemble(linked, { selections, locale: "ko" })).toContain("React로 만든다.");
+  });
+});
+
+// ── the structure sent alongside the prose ─────────────────────────────────
+
+describe("describeSelection", () => {
+  const report = (over: Partial<State> = {}, extra?: { fixApplied?: string }) =>
+    describeSelection(cat, state(over), extra);
+
+  it("separates chosen, decided-for-you and untouched", () => {
+    // A flat list of values cannot tell "left to the AI" from "a value was applied
+    // on their behalf", and those two want different treatment.
+    const withDefault = withAxis(cat, "pose", { default: "lying" });
+    const r = describeSelection(withDefault, state({ selections: { coat: "black" } }));
+
+    expect(Object.keys(r.chosen)).toEqual(["coat"]);
+    expect(Object.keys(r.standIn)).toEqual(["pose"]);
+    expect(r.untouched).toEqual(["mood", "width"]);
+  });
+
+  it("carries provenance, which the prose cannot", () => {
+    const open: Unfolded = withAxis(cat, "coat", {
+      type: "open",
+      emitTemplate: "털색은 {value}.",
+    });
+
+    const pressed = describeSelection(open, state({ selections: { coat: "black" } }));
+    expect(pressed.chosen.coat?.kind).toBe("option");
+
+    const typed = describeSelection(
+      open,
+      state({ selections: { coat: { kind: "typed", text: "고등어 태비" } } }),
+    );
+    expect(typed.chosen.coat?.kind).toBe("typed");
+    expect(typed.chosen.coat?.value).toBe("고등어 태비");
+  });
+
+  it("keeps the label and the section, so the grouping survives the trip", () => {
+    const r = report({ selections: { coat: "black" } });
+    expect(r.chosen.coat?.label).toBe("털색");
+    expect(r.chosen.coat?.section).toBe("subject");
+  });
+
+  it("reports a multi selection as a list and a range as a number", () => {
+    const r = report({ selections: { mood: ["warm", "quiet"], width: 1024 } });
+    expect(r.chosen.mood?.value).toEqual(["warm", "quiet"]);
+    expect(r.chosen.mood?.kind).toBe("options");
+    expect(r.chosen.width?.value).toBe(1024);
+    expect(r.chosen.width?.kind).toBe("number");
+  });
+
+  it("carries the intent and the goal", () => {
+    const withGoal: Unfolded = {
+      ...cat,
+      goal: { selected: "사실적인 그림", alternatives: ["만화풍"] },
+    };
+    const r = describeSelection(withGoal, state());
+    expect(r.intent).toBe(cat.intent);
+    expect(r.goal).toBe("사실적인 그림");
+  });
+
+  it("carries symptoms, freeform and the applied correction", () => {
+    const r = report(
+      { symptoms: ["flat"], freeform: "손그림 느낌으로" },
+      { fixApplied: "더 짧게" },
+    );
+    expect(r.symptoms).toEqual(["flat"]);
+    expect(r.freeform).toBe("손그림 느낌으로");
+    expect(r.fixApplied).toBe("더 짧게");
+  });
+
+  it("drops a symptom id that no longer exists", () => {
+    expect(report({ symptoms: ["ghost"] }).symptoms).toBeUndefined();
+  });
+
+  it("never carries the source material, and has no field for it", () => {
+    const r = report({ source: "예산 동결 결정", selections: { coat: "black" } });
+    expect(JSON.stringify(r)).not.toContain("예산 동결");
+    expect("source" in r).toBe(false);
+  });
+
+  it("names contradictions the user was warned about and kept", () => {
+    const clashing: Unfolded = withAxis(cat, "coat", {
+      conflicts: [{ with: { pose: "lying" }, reason: "누운 자세에서는 털색이 드러나지 않는다" }],
+    });
+    const r = describeSelection(clashing, state({ selections: { coat: "black", pose: "lying" } }));
+    expect(r.conflicts).toHaveLength(1);
+    expect(r.conflicts?.[0]?.reason).toContain("드러나지 않는다");
+  });
+
+  it("lists an inapplicable axis apart from an untouched one", () => {
+    const linked: Unfolded = withAxis(cat, "pose", { showIf: { coat: ["white"] } });
+    const r = describeSelection(linked, state({ selections: { coat: "black" } }));
+
+    // Not skipped — never asked. The model should not treat the two the same.
+    expect(r.inapplicable).toContain("pose");
+    expect(r.untouched).not.toContain("pose");
+  });
+
+  it("agrees with the prose about what was decided", () => {
+    const s = state({ selections: { coat: "black", mood: ["warm"] } });
+    const r = describeSelection(cat, s);
+    const text = assemble(cat, s);
+
+    for (const id of Object.keys(r.chosen)) {
+      expect(text).toContain(
+        cat.sections.flatMap((x) => x.axes).find((a) => a.id === id)!.label ? "" : "",
+      );
+    }
+    // Every chosen axis contributed a line, and no untouched one did.
+    expect(text.split("\n").filter(Boolean)).toHaveLength(1 + Object.keys(r.chosen).length);
   });
 });

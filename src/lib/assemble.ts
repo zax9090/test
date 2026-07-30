@@ -122,6 +122,14 @@ export interface ResolvedAxis {
   line: string;
   /** Values in play, for marking the matching example. Empty when `unset`. */
   values: string[];
+  /**
+   * Whether the axis still applies, given what else is chosen.
+   *
+   * An inapplicable axis is reported `unset` and contributes nothing, so the
+   * prompt cannot carry a sentence from a row the user can no longer see. The
+   * flag is kept so the widget can skip drawing it without recomputing.
+   */
+  applicable: boolean;
 }
 
 const SOURCE_HEADING: Record<AssembleLocale, string> = { ko: "자료", en: "Source" };
@@ -215,7 +223,7 @@ export function resolveAxes(unfolded: Unfolded, state: State): ResolvedAxis[] {
     for (const axis of section.axes) sectionOf.set(axis.id, section.id);
   }
 
-  return allAxes(unfolded).map((axis) => {
+  const resolved: ResolvedAxis[] = allAxes(unfolded).map((axis) => {
     const sectionId = sectionOf.get(axis.id) ?? "";
     const own = toState(axis, selections[axis.id]);
     const chosen = renderState(axis, own);
@@ -224,6 +232,7 @@ export function resolveAxes(unfolded: Unfolded, state: State): ResolvedAxis[] {
         axis,
         sectionId,
         status: "set" as const,
+        applicable: true,
         state: own,
         line: chosen.line,
         values: chosen.values,
@@ -239,6 +248,7 @@ export function resolveAxes(unfolded: Unfolded, state: State): ResolvedAxis[] {
         axis,
         sectionId,
         status: "partial" as const,
+        applicable: true,
         state: stored,
         line: fromPreset.line,
         values: fromPreset.values,
@@ -254,6 +264,7 @@ export function resolveAxes(unfolded: Unfolded, state: State): ResolvedAxis[] {
           axis,
           sectionId,
           status: "partial" as const,
+          applicable: true,
           state: fallback,
           line: applied.line,
           values: applied.values,
@@ -261,8 +272,26 @@ export function resolveAxes(unfolded: Unfolded, state: State): ResolvedAxis[] {
       }
     }
 
-    return { axis, sectionId, status: "unset" as const, state: NO_STATE, line: "", values: [] };
+    return {
+      axis,
+      sectionId,
+      status: "unset" as const,
+      applicable: true,
+      state: NO_STATE,
+      line: "",
+      values: [],
+    };
   });
+
+  // Second pass, against the fully resolved list: an axis that no longer applies
+  // is reported as undecided and contributes nothing. Doing this here rather than
+  // in the widget is what stops a hidden row from quietly leaving its sentence in
+  // the prompt — a sentence the user can no longer see to remove.
+  return resolved.map((entry) =>
+    isApplicable(entry.axis, resolved)
+      ? entry
+      : { ...entry, applicable: false, status: "unset" as const, line: "", values: [] },
+  );
 }
 
 function renderSource(source: string, locale: AssembleLocale): string {
@@ -286,6 +315,92 @@ function renderSource(source: string, locale: AssembleLocale): string {
  * Never throws. Unknown axis ids in `state`, stale option values and malformed
  * ranges are all skipped.
  */
+/**
+ * The value an axis currently holds, as a plain string, for matching conditions.
+ *
+ * Only option values can take part in a dependency: a typed value is the user's
+ * own words and the model has no way to have written a rule about it.
+ */
+function conditionValues(resolved: ResolvedAxis): string[] {
+  const { state } = resolved;
+  if (state.kind === "option") return [state.optionValue];
+  if (state.kind === "options") return state.optionValues;
+  return [];
+}
+
+/**
+ * Whether an axis applies at all right now.
+ *
+ * `showIf` is for axes that stop *applying* — a stack is not a question you can
+ * answer about a plan document. It is not a way to hide axes judged unimportant;
+ * that was `core`/`extra`, and sections replaced it.
+ *
+ * An unmatched condition on an axis nobody has touched leaves the axis showing.
+ * Hiding it before the governing axis is answered would make it vanish for a
+ * reason the user cannot see yet.
+ */
+export function isApplicable(axis: Axis, resolved: ResolvedAxis[]): boolean {
+  if (!axis.showIf) return true;
+
+  const byId = new Map(resolved.map((r) => [r.axis.id, r]));
+  return Object.entries(axis.showIf).every(([axisId, allowed]) => {
+    const governing = byId.get(axisId);
+    if (!governing) return true;
+
+    const held = conditionValues(governing);
+    // Not yet answered: keep showing rather than hide on an unstated premise.
+    if (held.length === 0) return true;
+    return held.some((v) => allowed.includes(v));
+  });
+}
+
+export interface ConflictReport {
+  /** The axis carrying the rule. */
+  axisId: string;
+  /** The value of that axis the rule is attached to, when it has one. */
+  reason: string;
+  /** Axis ids on the other side, so the widget can mark both. */
+  against: string[];
+}
+
+/**
+ * Every contradiction currently live.
+ *
+ * Reported, never blocked. The widget dims the clashing values and shows the
+ * reason at the moment of choosing; it does not refuse the choice. Every
+ * contradiction seen in real use was "I did not know", so saying it early is the
+ * whole fix — and refusing would only take away the case where someone knows and
+ * means it anyway (P4, docs/stage0-conflicts.md C20).
+ */
+export function findConflicts(unfolded: Unfolded, resolved: ResolvedAxis[]): ConflictReport[] {
+  const byId = new Map(resolved.map((r) => [r.axis.id, r]));
+  const reports: ConflictReport[] = [];
+
+  for (const axis of allAxes(unfolded)) {
+    const own = byId.get(axis.id);
+    // A rule on an axis nobody has answered has nothing to clash with yet.
+    if (!axis.conflicts || !own || conditionValues(own).length === 0) continue;
+
+    for (const rule of axis.conflicts) {
+      const against = Object.entries(rule.with);
+      const holds = against.every(([otherId, value]) => {
+        const other = byId.get(otherId);
+        return other ? conditionValues(other).includes(value) : false;
+      });
+
+      if (holds) {
+        reports.push({
+          axisId: axis.id,
+          reason: rule.reason,
+          against: against.map(([otherId]) => otherId),
+        });
+      }
+    }
+  }
+
+  return reports;
+}
+
 export function assemble(unfolded: Unfolded, state: State): string {
   const locale = state.locale ?? "en";
 
@@ -318,6 +433,135 @@ export function assemble(unfolded: Unfolded, state: State): string {
   if (source) blocks.push(renderSource(source, locale));
 
   return blocks.filter(Boolean).join("\n\n");
+}
+
+/**
+ * One axis, as the model should see it.
+ *
+ * `kind` is the provenance, and it is the field that makes the report worth
+ * sending: `option` means the user took a value the model wrote, `typed` means
+ * they wrote their own. Reading the assembled prose, those are indistinguishable.
+ */
+export interface ReportedAxis {
+  kind: AxisState["kind"];
+  label: string;
+  /** Which section it was declared in, so the grouping survives the trip. */
+  section: string;
+  value: string | string[] | number;
+}
+
+/**
+ * The structure behind the prompt.
+ *
+ * Sent *alongside* the assembled text, never instead of it. The prose is what the
+ * user copies and what the brief calls the deliverable; this is what lets the
+ * model see which axis a sentence came from and check the combination. Replacing
+ * the prose with ids would have left `[복사]` nothing to copy — see
+ * docs/stage0-conflicts.md (C18).
+ *
+ * The three groups are the point. A flat list of chosen values cannot tell "left
+ * to the AI" from "a value was applied on their behalf", and those want different
+ * treatment: the first is genuinely open, the second is a decision the user may
+ * not have noticed making.
+ *
+ * The source material is not here, and there is no field for it.
+ */
+export interface SelectionReport {
+  intent: string;
+  goal?: string;
+  /** Axes the user decided themselves. */
+  chosen: Record<string, ReportedAxis>;
+  /** Decided by a `default` or a loaded preset, not by the user this time. */
+  standIn: Record<string, ReportedAxis>;
+  /** Ids the user never touched — left to the AI. */
+  untouched: string[];
+  /** Ids that stopped applying, so the model knows they were not skipped. */
+  inapplicable: string[];
+  symptoms?: string[];
+  freeform?: string;
+  /** Contradictions live at send time. The user was told and proceeded anyway. */
+  conflicts?: ConflictReport[];
+  /** The correction button that filled these values, when one did. */
+  fixApplied?: string;
+}
+
+function reportValue(state: AxisState): string | string[] | number | undefined {
+  switch (state.kind) {
+    case "option":
+      return state.optionValue;
+    case "options":
+      return state.optionValues;
+    case "typed":
+      return state.text;
+    case "number":
+      return state.value;
+    case "none":
+      return undefined;
+  }
+}
+
+/**
+ * Describe what was decided, in structure rather than prose.
+ *
+ * Pure, like everything else here, and built from the same `resolveAxes` output
+ * the rows and the text come from — so the three cannot disagree about what the
+ * user chose.
+ */
+export function describeSelection(
+  unfolded: Unfolded,
+  state: State,
+  extra: { fixApplied?: string } = {},
+): SelectionReport {
+  const resolved = resolveAxes(unfolded, state);
+
+  const report: SelectionReport = {
+    intent: unfolded.intent.trim(),
+    chosen: {},
+    standIn: {},
+    untouched: [],
+    inapplicable: [],
+  };
+
+  if (unfolded.goal) report.goal = unfolded.goal.selected;
+
+  for (const entry of resolved) {
+    const id = entry.axis.id;
+
+    if (!entry.applicable) {
+      report.inapplicable.push(id);
+      continue;
+    }
+
+    const value = reportValue(entry.state);
+    if (entry.status === "unset" || value === undefined) {
+      report.untouched.push(id);
+      continue;
+    }
+
+    const reported: ReportedAxis = {
+      kind: entry.state.kind,
+      label: entry.axis.label,
+      section: entry.sectionId,
+      value,
+    };
+    if (entry.status === "set") report.chosen[id] = reported;
+    else report.standIn[id] = reported;
+  }
+
+  const symptoms = state.symptoms?.filter((id) =>
+    (unfolded.symptoms ?? []).some((s) => s.id === id),
+  );
+  if (symptoms?.length) report.symptoms = symptoms;
+
+  const freeform = state.freeform?.trim();
+  if (freeform) report.freeform = freeform;
+
+  const conflicts = findConflicts(unfolded, resolved);
+  if (conflicts.length) report.conflicts = conflicts;
+
+  if (extra.fixApplied) report.fixApplied = extra.fixApplied;
+
+  return report;
 }
 
 /** Character count for the result tab. Length only — never a quality score (P5). */
