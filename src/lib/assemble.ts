@@ -33,6 +33,18 @@ export type Selection = string | string[] | number | null | undefined;
 export interface State {
   /** Axis id to chosen value. Ids with no matching axis are ignored. */
   selections: Record<string, Selection>;
+  /**
+   * Values that came from a preset.
+   *
+   * Applied where the user has not chosen, and reported as `partial` — the same
+   * status a model `default` gets, for the same reason: the value is decided but
+   * not decided *this time*. They are the user's own earlier choices, which is
+   * exactly why they must stay visible rather than be adopted silently (P7).
+   *
+   * Separate from `default` because a `default` is a single scalar and a stored
+   * multi-select is an array.
+   */
+  loaded?: Record<string, Selection>;
   /** Ids of the selected symptoms. */
   symptoms?: string[];
   /** The free-text box. Always available (P4). */
@@ -157,7 +169,20 @@ export function resolveAxes(unfolded: Unfolded, state: State): ResolvedAxis[] {
       return { axis, sectionId, status: "set" as const, line: chosen.line, values: chosen.values };
     }
 
-    // Nothing chosen — a `default` stands in, and says so on screen.
+    // Nothing chosen this time. A preset value stands in first — it is the user's
+    // own earlier answer, so it outranks whatever the model would have defaulted to.
+    const fromPreset = renderSelection(axis, state.loaded?.[axis.id]);
+    if (fromPreset) {
+      return {
+        axis,
+        sectionId,
+        status: "partial" as const,
+        line: fromPreset.line,
+        values: fromPreset.values,
+      };
+    }
+
+    // Failing that, a `default` stands in, and says so on screen.
     if (axis.default !== undefined && axis.default !== null) {
       const applied = renderSelection(axis, axis.default);
       if (applied) {

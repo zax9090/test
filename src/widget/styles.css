@@ -703,3 +703,107 @@
     padding-left: 0;
   }
 }
+
+/* ── presets ──────────────────────────────────────────────────────────── */
+
+/*
+ * Same shape as the goal row, one level down: it also replaces the axes wholesale
+ * rather than changing one line, so it belongs with the goal rather than among
+ * the rows.
+ */
+.uu-presets {
+  padding: 0 2px 12px;
+}
+
+.uu-preset-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.uu-preset-current {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+
+.uu-preset-current:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.uu-preset-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uu-preset-open {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding-left: 94px;
+}
+
+.uu-preset-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A name hugs its text, like every other choice in the widget. */
+.uu-preset-name {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--color-border-primary, rgba(128, 128, 128, 0.32));
+  border-radius: var(--border-radius-full, 999px);
+  padding: 4px 10px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.uu-preset-name.is-on {
+  border-color: currentColor;
+}
+
+.uu-preset-name:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.uu-preset-save {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 2px 0;
+}
+
+.uu-preset-save .uu-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@media (max-width: 420px) {
+  .uu-preset-row {
+    flex-wrap: wrap;
+  }
+
+  .uu-preset-open {
+    padding-left: 0;
+  }
+}

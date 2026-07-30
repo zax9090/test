@@ -260,6 +260,45 @@ describe("axis status", () => {
     expect(text).not.toContain("따뜻한"); // unset — left to the AI
   });
 
+  it("marks a value that came from a preset as decided-on-your-behalf", () => {
+    const resolved = resolveAxes(cat, state({ loaded: { coat: "white" } }));
+    expect(resolved[0]!.status).toBe("partial");
+    expect(resolved[0]!.line).toBe("털색은 흰색으로 한다.");
+  });
+
+  it("lets a preset value outrank a model default — it is the user's own answer", () => {
+    const withDefault = withAxis(cat, "coat", { default: "black" });
+    const resolved = resolveAxes(withDefault, state({ loaded: { coat: "white" } }));
+    expect(resolved[0]!.line).toBe("털색은 흰색으로 한다.");
+  });
+
+  it("lets this-time choice outrank a preset value", () => {
+    const resolved = resolveAxes(
+      cat,
+      state({ loaded: { coat: "white" }, selections: { coat: "black" } }),
+    );
+    expect(resolved[0]!.status).toBe("set");
+    expect(resolved[0]!.line).toContain("검은색");
+  });
+
+  it("copies a preset value into the prompt, like any other stand-in", () => {
+    expect(assemble(cat, state({ loaded: { coat: "white" } }))).toBe(
+      `${cat.intent}\n\n털색은 흰색으로 한다.`,
+    );
+  });
+
+  it("carries a preset value for a multi axis, which a default could not hold", () => {
+    const resolved = resolveAxes(cat, state({ loaded: { mood: ["warm", "quiet"] } }));
+    const byId = Object.fromEntries(resolved.map((r) => [r.axis.id, r]));
+    expect(byId.mood?.status).toBe("partial");
+    expect(byId.mood?.values).toEqual(["warm", "quiet"]);
+  });
+
+  it("ignores a preset value for an axis that no longer exists", () => {
+    expect(() => assemble(cat, state({ loaded: { gone: "x" } }))).not.toThrow();
+    expect(assemble(cat, state({ loaded: { gone: "x" } }))).toBe(cat.intent);
+  });
+
   it("ignores a default that points at a value that no longer exists", () => {
     const stale = withAxis(cat, "coat", { default: "chartreuse" });
     const resolved = resolveAxes(stale, state());

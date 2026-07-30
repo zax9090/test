@@ -27,6 +27,7 @@ import type { Locale } from "../lib/locale.js";
 import { strings } from "./i18n.js";
 import { AxisList } from "./AxisList.js";
 import { GoalField } from "./GoalField.js";
+import { PresetBar, PresetSave, usePresets } from "./PresetBar.js";
 import { MapView } from "./MapView.js";
 import { Result } from "./Result.js";
 import { useWidth } from "./useWidth.js";
@@ -117,6 +118,12 @@ function App() {
   const [mapOpen, setMapOpen] = useState(false);
   const [refolding, setRefolding] = useState(false);
   const [switchingGoal, setSwitchingGoal] = useState(false);
+  // Values a preset supplied. Held apart from `selections` so they can read as
+  // decided-for-you until the user actually touches one.
+  const [loaded, setLoaded] = useState<Record<string, Selection>>({});
+  const [loadedFrom, setLoadedFrom] = useState<{ id: string; name: string } | undefined>();
+  const [presetBusy, setPresetBusy] = useState(false);
+  const [presetReload, setPresetReload] = useState(0);
   // An axis the map asked for, held until its row actually exists in the DOM.
   const [pendingAxis, setPendingAxis] = useState<string | null>(null);
 
@@ -146,8 +153,8 @@ function App() {
   const t = useMemo(() => strings(locale), [locale]);
 
   const state: State = useMemo(
-    () => ({ selections, symptoms: chosenSymptoms, freeform, source, locale }),
-    [selections, chosenSymptoms, freeform, source, locale],
+    () => ({ selections, loaded, symptoms: chosenSymptoms, freeform, source, locale }),
+    [selections, loaded, chosenSymptoms, freeform, source, locale],
   );
 
   const resolved = useMemo(
@@ -227,6 +234,118 @@ function App() {
       }
     },
     [app, payload, switchingGoal, t],
+  );
+
+  /**
+   * Call one of the app-only preset tools.
+   *
+   * Undefined where there is no app yet. A rejection is the expected answer on the
+   * remote Worker, where these tools are not registered at all — callers treat that
+   * as "no presets" rather than as an error, because storage being unavailable must
+   * never disturb the part that never needed storage.
+   */
+  const callPreset = useMemo(
+    () =>
+      app
+        ? async (name: string, args: Record<string, unknown> = {}) => {
+            const result = await app.callServerTool({ name, arguments: args });
+            return (result as { structuredContent?: unknown }).structuredContent;
+          }
+        : undefined,
+    [app],
+  );
+
+  const presets = usePresets(callPreset, presetReload);
+
+  /**
+   * Replace the axes with a saved set. No model call — they are already written.
+   *
+   * The stored values land in `loaded`, not in `selections`, so every one of them
+   * shows as decided-for-you until the user touches it. Touching one promotes that
+   * axis to their own choice and leaves the rest alone.
+   */
+  const loadPreset = useCallback(
+    async (id: string) => {
+      if (!callPreset || presetBusy) return;
+      setPresetBusy(true);
+
+      try {
+        const result = (await callPreset("load_preset", { id })) as
+          | {
+              found?: boolean;
+              preset?: { id: string; name: string };
+              unfolded?: Unfolded;
+              selections?: Record<string, Selection>;
+              symptoms?: string[];
+              locale?: Locale;
+            }
+          | undefined;
+
+        if (result?.found && result.unfolded?.sections?.length) {
+          setPayload({ unfolded: result.unfolded, locale: result.locale });
+          setSelections({});
+          setLoaded(result.selections ?? {});
+          setChosenSymptoms(result.symptoms ?? []);
+          setFreeform("");
+          // The material is the one thing a preset never carries, and the one
+          // thing that changes between runs. The box stays empty on purpose.
+          setSource("");
+          setLoadedFrom(result.preset);
+        }
+      } catch {
+        // No preset tools on this server, or the preset is gone. Nothing changes.
+      } finally {
+        setPresetBusy(false);
+      }
+    },
+    [callPreset, presetBusy],
+  );
+
+  const savePreset = useCallback(
+    async (name: string, overwriteId?: string) => {
+      if (!callPreset || !payload || presetBusy) return;
+      setPresetBusy(true);
+
+      try {
+        // Only the axes and the values travel. The source box is not passed at
+        // all — there is no argument for it to arrive in.
+        const result = (await callPreset("save_preset", {
+          name,
+          unfolded: JSON.stringify(payload.unfolded),
+          selections: JSON.stringify({ ...loaded, ...selections }),
+          ...(chosenSymptoms.length ? { symptoms: chosenSymptoms } : {}),
+          ...(overwriteId ? { overwriteId } : {}),
+        })) as { saved?: boolean; id?: string; name?: string } | undefined;
+
+        if (result?.saved && result.id) {
+          setLoadedFrom({ id: result.id, name: result.name ?? name });
+          setPresetReload((n) => n + 1);
+        }
+      } catch {
+        // Nothing to say — the brief allows no error banner.
+      } finally {
+        setPresetBusy(false);
+      }
+    },
+    [callPreset, payload, presetBusy, loaded, selections, chosenSymptoms],
+  );
+
+  const deletePreset = useCallback(
+    async (id: string) => {
+      if (!callPreset || presetBusy) return;
+      setPresetBusy(true);
+
+      try {
+        await callPreset("delete_preset", { id });
+        if (loadedFrom?.id === id) setLoadedFrom(undefined);
+        setPresetReload((n) => n + 1);
+      } catch {
+        // Nothing changes.
+      } finally {
+        setPresetBusy(false);
+      }
+    },
+    [callPreset, presetBusy, loadedFrom],
   );
 
   const handleCopy = useCallback(async () => {
@@ -337,6 +456,17 @@ function App() {
         />
       ) : null}
 
+      {/* Only where presets can exist. On the remote Worker `list_presets` is not
+          registered, the list stays empty, and this renders nothing. */}
+      <PresetBar
+        presets={presets}
+        loadedId={loadedFrom?.id}
+        busy={presetBusy || superseded}
+        onLoad={loadPreset}
+        onDelete={deletePreset}
+        t={t}
+      />
+
       {/* Both tabs stay mounted so switching keeps scroll and open/closed folds. */}
       <div hidden={tab !== "list"}>
         <AxisList
@@ -374,6 +504,18 @@ function App() {
           canSend={Boolean(app) && !superseded}
           t={t}
         />
+
+        {/* Saving is asked for here, next to the finished text — the point at
+            which the user knows the settings were worth keeping. Absent where
+            there is nowhere to write. */}
+        {callPreset ? (
+          <PresetSave
+            loaded={loadedFrom}
+            busy={presetBusy || superseded}
+            onSave={savePreset}
+            t={t}
+          />
+        ) : null}
       </div>
     </div>
   );

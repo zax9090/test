@@ -39,6 +39,15 @@ export interface Strings {
   goalSwitching: string;
   goalCost: string;
   goalAsk: (intent: string, reading: string) => string;
+  presets: string;
+  presetPick: string;
+  presetSave: string;
+  presetSaveConfirm: string;
+  presetSaveNew: string;
+  presetOverwrite: string;
+  presetDelete: string;
+  presetNamePlaceholder: string;
+  presetLoaded: string;
 }
 
 const ko: Strings = {
@@ -70,6 +79,15 @@ const ko: Strings = {
   goalSwitching: "새 축을 뽑는 중",
   goalCost: "목표를 바꾸면 축이 새로 만들어져서 지금 고른 값은 사라집니다",
   goalAsk: (intent, reading) => `"${intent}"를 "${reading}"으로 보고 다시 펼쳐줘.`,
+  presets: "프리셋",
+  presetPick: "불러오기",
+  presetSave: "프리셋으로 저장",
+  presetSaveConfirm: "저장",
+  presetSaveNew: "새로 저장",
+  presetOverwrite: "덮어쓰기",
+  presetDelete: "삭제",
+  presetNamePlaceholder: "이름",
+  presetLoaded: "프리셋에서 불러옴",
 };
 
 const en: Strings = {
@@ -102,6 +120,15 @@ const en: Strings = {
   goalSwitching: "Building new axes",
   goalCost: "Switching the goal rebuilds the axes, so the values you picked will be lost",
   goalAsk: (intent, reading) => `Unfold "${intent}" again, read as "${reading}".`,
+  presets: "Presets",
+  presetPick: "Load",
+  presetSave: "Save as preset",
+  presetSaveConfirm: "Save",
+  presetSaveNew: "Save as new",
+  presetOverwrite: "Overwrite",
+  presetDelete: "Delete",
+  presetNamePlaceholder: "Name",
+  presetLoaded: "from a preset",
 };
 
 export function strings(locale: Locale): Strings {

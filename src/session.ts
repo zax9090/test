@@ -14,7 +14,6 @@
  */
 
 import { DurableObject } from "cloudflare:workers";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   DurableObjectEventStore,
   WorkerTransport,
@@ -24,8 +23,7 @@ import {
   type TransportState,
 } from "agents/mcp";
 
-import { registerUnfold } from "./tools/unfold.js";
-import { registerWidgetResource } from "./resources/widget.js";
+import { buildServer } from "./build-server.js";
 import type { Env } from "./env.js";
 
 /** Route the MCP endpoint lives on, worker and object side alike. */
@@ -35,41 +33,6 @@ export const MCP_ROUTE = "/mcp";
 export const SESSION_HEADER = "x-uu-session";
 
 const TRANSPORT_STATE_KEY = "mcp:transport";
-
-const SERVER_INFO = {
-  name: "unknown-unknowns",
-  version: "0.1.0",
-} as const;
-
-const INSTRUCTIONS = `Surfaces the choices a request leaves unmade, so the user can
-decide them instead of discovering them one correction at a time.
-
-Reach for \`unfold\` when a request is open-ended and you would otherwise guess.
-Leave it alone when the request is already specific — answer that directly.`;
-
-/**
- * Build the server.
- *
- * Tools and resources are registered up front — they have to be, since the first
- * registration installs the `tools/list` handler and that path throws once the
- * server is connected. `unfold` then narrows itself in `oninitialized`, which is
- * the earliest point the client's sampling capability is known.
- */
-function buildServer(): McpServer {
-  const server = new McpServer(SERVER_INFO, {
-    instructions: INSTRUCTIONS,
-    capabilities: { tools: {}, resources: {} },
-  });
-
-  const unfold = registerUnfold(server);
-  registerWidgetResource(server);
-
-  server.server.oninitialized = () => {
-    unfold.onCapabilities(Boolean(server.server.getClientCapabilities()?.sampling));
-  };
-
-  return server;
-}
 
 export class McpSession extends DurableObject<Env> {
   private handler?: LegacyMcpHandler;

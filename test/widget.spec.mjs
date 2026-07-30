@@ -625,8 +625,10 @@ test("refold asks the conversation rather than calling a tool", async ({ page })
 
   await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
 
-  // Nothing is asked of the server: the model is only ever reached as a caller.
-  expect(await page.evaluate(() => window.__harness.toolCalls.length)).toBe(0);
+  // Nothing is asked of the server to re-extract: the model is only ever reached
+  // as a caller. (`list_presets` may have run on mount; that is not extraction.)
+  const named = await page.evaluate(() => window.__harness.toolCalls.map((c) => c.name));
+  expect(named).not.toContain("unfold");
 
   const sent = await page.evaluate(() => window.__harness.sent[0]);
   expect(sent.role).toBe("user");
@@ -734,8 +736,9 @@ test("switching the goal asks the conversation, and says what it costs first", a
   await frame.locator(".uu-goal-alt", { hasText: "만화풍 그림" }).click();
   await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
 
-  // Same route as refold: the model is only ever reached as a caller.
-  expect(await page.evaluate(() => window.__harness.toolCalls.length)).toBe(0);
+  // Same route as refold: no server tool is asked to build the new axes.
+  const named = await page.evaluate(() => window.__harness.toolCalls.map((c) => c.name));
+  expect(named).not.toContain("unfold");
 
   const sent = await page.evaluate(() => window.__harness.sent[0]);
   expect(sent.role).toBe("user");
@@ -777,4 +780,166 @@ test("a superseded widget cannot switch the goal either", async ({ page }) => {
   });
 
   await expect(frame.locator(".uu-goal-current")).toBeDisabled();
+});
+
+// ── presets ────────────────────────────────────────────────────────────────
+
+/** Open with canned answers for the app-only preset tools. */
+async function openWithPresets(page, responses, payload = PAYLOAD) {
+  await page.addInitScript((r) => {
+    window.__toolResponses = r;
+  }, responses);
+  return open(page, payload);
+}
+
+const TWO_PRESETS = {
+  list_presets: {
+    presets: [
+      { id: "p1", name: "주간보고 정리", uses: 4, lastUsedAt: 200 },
+      { id: "p2", name: "회의록 요약", uses: 1, lastUsedAt: 100 },
+    ],
+  },
+};
+
+/** What `load_preset` hands back: axes already written, values as stand-ins. */
+const LOADED = {
+  ...TWO_PRESETS,
+  load_preset: {
+    found: true,
+    preset: { id: "p1", name: "주간보고 정리" },
+    locale: "ko",
+    unfolded: {
+      title: "주간보고 정리",
+      intent: "주간보고 정리해줘",
+      sections: [
+        {
+          id: "form",
+          label: "형식",
+          axes: [
+            {
+              id: "structure",
+              label: "구조",
+              type: "select",
+              options: [
+                { value: "first", label: "결론 먼저", emit: "결론을 먼저 쓴다." },
+                { value: "last", label: "결론 나중", emit: "결론을 마지막에 쓴다." },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    selections: { structure: "first" },
+  },
+};
+
+test("no preset row where there is nowhere to save", async ({ page }) => {
+  // No `__toolResponses`, so `list_presets` throws — the remote Worker's case.
+  const frame = await open(page);
+  await expect(frame.locator(".uu-presets")).toHaveCount(0);
+});
+
+test("lists saved presets, most recently used first", async ({ page }) => {
+  const frame = await openWithPresets(page, TWO_PRESETS);
+
+  await frame.locator(".uu-preset-current").click();
+  await expect(frame.locator(".uu-preset-name")).toHaveText(["주간보고 정리", "회의록 요약"]);
+});
+
+test("loading a preset replaces the axes without asking the conversation", async ({ page }) => {
+  const frame = await openWithPresets(page, LOADED);
+
+  await frame.locator(".uu-preset-current").click();
+  await frame.locator(".uu-preset-name", { hasText: "주간보고 정리" }).click();
+
+  // The new axes are on screen and the old ones are gone.
+  await expect(frame.locator(".uu-label").filter({ hasText: "구조" })).toBeVisible();
+  await expect(frame.locator(".uu-label").filter({ hasText: "털색" })).toHaveCount(0);
+
+  // No model in the loop: the widget called the tool directly.
+  expect(await page.evaluate(() => window.__harness.sent.length)).toBe(0);
+  const calls = await page.evaluate(() => window.__harness.toolCalls.map((c) => c.name));
+  expect(calls).toContain("load_preset");
+});
+
+test("a loaded value reads as decided-for-you, not as this-time choice", async ({ page }) => {
+  const frame = await openWithPresets(page, LOADED);
+  await frame.locator(".uu-preset-current").click();
+  await frame.locator(".uu-preset-name", { hasText: "주간보고 정리" }).click();
+
+  const chip = frame.locator(".uu-chip", { hasText: "결론 먼저" });
+  await expect(chip).toHaveClass(/is-default/);
+  await expect(chip).not.toHaveClass(/is-on/);
+
+  // Touching it makes it theirs.
+  await chip.click();
+  await expect(chip).toHaveClass(/is-on/);
+});
+
+test("a loaded preset still reaches the prompt", async ({ page }) => {
+  const frame = await openWithPresets(page, LOADED);
+  await frame.locator(".uu-preset-current").click();
+  await frame.locator(".uu-preset-name", { hasText: "주간보고 정리" }).click();
+
+  await expect(prompt(frame)).toContainText("주간보고 정리해줘");
+  await expect(prompt(frame)).toContainText("결론을 먼저 쓴다.");
+});
+
+test("loading leaves the source box empty — that is the only thing left to do", async ({
+  page,
+}) => {
+  const frame = await openWithPresets(page, LOADED);
+  await frame.locator(".uu-preset-current").click();
+  await frame.locator(".uu-preset-name", { hasText: "주간보고 정리" }).click();
+
+  await expect(frame.locator(".uu-textarea").last()).toHaveValue("");
+});
+
+test("saving asks for a name and nothing else, and never sends the material", async ({ page }) => {
+  const frame = await openWithPresets(page, {
+    ...TWO_PRESETS,
+    save_preset: { saved: true, id: "new", name: "내 설정" },
+  });
+
+  // Material in the box, and a choice made.
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await frame.locator(".uu-textarea").last().fill("예산 동결 결정");
+
+  await resultTab(frame).click();
+  await frame.locator(".uu-preset-save .uu-btn").click();
+  await frame.locator(".uu-preset-save .uu-input").fill("내 설정");
+  await frame.locator(".uu-preset-save .uu-btn", { hasText: "저장" }).click();
+
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.__harness.toolCalls.filter((c) => c.name === "save_preset").length,
+      ),
+    )
+    .toBe(1);
+
+  const call = await page.evaluate(
+    () => window.__harness.toolCalls.find((c) => c.name === "save_preset").arguments,
+  );
+  expect(call.name).toBe("내 설정");
+  expect(call.selections).toContain("black");
+  // The material was never an argument to begin with.
+  expect(JSON.stringify(call)).not.toContain("예산 동결");
+});
+
+test("overwrite is offered only once the state came from a preset", async ({ page }) => {
+  const frame = await openWithPresets(page, LOADED);
+
+  await resultTab(frame).click();
+  await frame.locator(".uu-preset-save .uu-btn").click();
+  await expect(frame.locator(".uu-preset-save .uu-btn", { hasText: "덮어쓰기" })).toHaveCount(0);
+
+  // Load one, and now there is something to overwrite.
+  await frame.locator(".uu-tab", { hasText: "목록" }).click();
+  await frame.locator(".uu-preset-current").click();
+  await frame.locator(".uu-preset-name", { hasText: "주간보고 정리" }).click();
+
+  await resultTab(frame).click();
+  await expect(frame.locator(".uu-preset-save .uu-btn", { hasText: "덮어쓰기" })).toBeVisible();
+  await expect(frame.locator(".uu-preset-save .uu-btn", { hasText: "새로 저장" })).toBeVisible();
 });
