@@ -20,5 +20,5 @@
   // The widget is browser code and needs DOM types, which conflict with the
   // Workers globals. It is typechecked separately by src/widget/tsconfig.json.
   "include": ["src/**/*", "test/**/*"],
-  "exclude": ["src/widget/**"]
+  "exclude": ["src/widget/**", "src/local/**"]
 }
