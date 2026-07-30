@@ -4,10 +4,13 @@ import {
   assemble,
   assembledLength,
   emptyState,
+  findConflicts,
+  isApplicable,
   resolveAxes,
+  type Selection,
   type State,
 } from "../src/lib/assemble.js";
-import type { Unfolded } from "../src/lib/schema.js";
+import { allAxes, type Unfolded } from "../src/lib/schema.js";
 
 const cat: Unfolded = {
   title: "고양이 이미지",
@@ -402,5 +405,182 @@ describe("serializable", () => {
     const s = state({ selections: { coat: "black", mood: ["warm"], width: 1024 } });
     const round = JSON.parse(JSON.stringify(cat)) as Unfolded;
     expect(assemble(round, s)).toBe(assemble(cat, s));
+  });
+});
+
+// ── axes that depend on each other ─────────────────────────────────────────
+
+describe("applicability and conflicts", () => {
+  const linked: Unfolded = {
+    title: "웹사이트",
+    intent: "웹사이트 설계해줘",
+    sections: [
+      {
+        id: "shape",
+        label: "형태",
+        axes: [
+          {
+            id: "deliverable",
+            label: "결과물",
+            type: "closed",
+            options: [
+              { value: "code", label: "코드", emit: "코드로 만든다." },
+              { value: "plan", label: "기획서", emit: "기획서로 쓴다." },
+            ],
+          },
+          {
+            id: "stack",
+            label: "스택",
+            type: "closed",
+            showIf: { deliverable: ["code"] },
+            options: [{ value: "react", label: "React", emit: "React로 만든다." }],
+          },
+          {
+            id: "count",
+            label: "축 개수",
+            type: "closed",
+            conflicts: [{ with: { specificity: "over" }, reason: "이미 구체적이면 축이 없다" }],
+            options: [{ value: "8", label: "8개", emit: "축을 8개 만든다." }],
+          },
+          {
+            id: "specificity",
+            label: "구체성",
+            type: "closed",
+            options: [{ value: "over", label: "이미 구체적", emit: "이미 구체적이다." }],
+          },
+        ],
+      },
+    ],
+  };
+
+  const resolve = (selections: Record<string, Selection>) =>
+    resolveAxes(linked, { selections, locale: "ko" });
+
+  const axisById = (id: string) => allAxes(linked).find((a) => a.id === id)!;
+
+  it("shows a dependent axis while its governing axis is unanswered", () => {
+    // Hiding before the premise is visible would make it vanish for a reason
+    // the user cannot yet see.
+    expect(isApplicable(axisById("stack"), resolve({}))).toBe(true);
+  });
+
+  it("hides an axis that stops applying", () => {
+    expect(isApplicable(axisById("stack"), resolve({ deliverable: "plan" }))).toBe(false);
+    expect(isApplicable(axisById("stack"), resolve({ deliverable: "code" }))).toBe(true);
+  });
+
+  it("leaves an independent axis always applicable", () => {
+    expect(isApplicable(axisById("deliverable"), resolve({ deliverable: "plan" }))).toBe(true);
+  });
+
+  it("reports a live contradiction, naming both sides", () => {
+    const found = findConflicts(linked, resolve({ count: "8", specificity: "over" }));
+    expect(found).toHaveLength(1);
+    expect(found[0]!.axisId).toBe("count");
+    expect(found[0]!.against).toEqual(["specificity"]);
+    expect(found[0]!.reason).toContain("이미 구체적");
+  });
+
+  it("reports nothing until both sides are actually chosen", () => {
+    expect(findConflicts(linked, resolve({ count: "8" }))).toEqual([]);
+    expect(findConflicts(linked, resolve({ specificity: "over" }))).toEqual([]);
+    expect(findConflicts(linked, resolve({}))).toEqual([]);
+  });
+
+  it("does not block the contradiction — both lines still reach the prompt", () => {
+    // Informing at the moment of choosing is the fix; refusing would only take
+    // away the case where someone knows and means it (P4, C20).
+    const text = assemble(linked, {
+      selections: { count: "8", specificity: "over" },
+      locale: "ko",
+    });
+    expect(text).toContain("축을 8개 만든다.");
+    expect(text).toContain("이미 구체적이다.");
+  });
+
+  it("ignores a rule pointing at an axis that no longer exists", () => {
+    const stale: Unfolded = {
+      ...linked,
+      sections: [
+        {
+          ...linked.sections[0]!,
+          axes: linked.sections[0]!.axes.filter((a) => a.id !== "specificity"),
+        },
+      ],
+    };
+    expect(() =>
+      findConflicts(stale, resolveAxes(stale, { selections: { count: "8" } })),
+    ).not.toThrow();
+    expect(findConflicts(stale, resolveAxes(stale, { selections: { count: "8" } }))).toEqual([]);
+  });
+
+  it("takes no notice of a typed value — no rule can have been written about it", () => {
+    const typed = resolve({ specificity: { kind: "typed", text: "over" } });
+    expect(findConflicts(linked, typed)).toEqual([]);
+  });
+});
+
+describe("an inapplicable axis contributes nothing", () => {
+  const linked: Unfolded = {
+    title: "웹사이트",
+    intent: "웹사이트 설계해줘",
+    sections: [
+      {
+        id: "shape",
+        label: "형태",
+        axes: [
+          {
+            id: "deliverable",
+            label: "결과물",
+            type: "closed",
+            options: [
+              { value: "code", label: "코드", emit: "코드로 만든다." },
+              { value: "plan", label: "기획서", emit: "기획서로 쓴다." },
+            ],
+          },
+          {
+            id: "stack",
+            label: "스택",
+            type: "closed",
+            showIf: { deliverable: ["code"] },
+            options: [{ value: "react", label: "React", emit: "React로 만든다." }],
+          },
+        ],
+      },
+    ],
+  };
+
+  it("drops the sentence of an axis that stopped applying", () => {
+    // The row is gone from the screen, so its line must be gone from the prompt.
+    // Leaving it in would put a sentence in the text that the user can no longer
+    // see to remove.
+    const text = assemble(linked, {
+      selections: { deliverable: "plan", stack: "react" },
+      locale: "ko",
+    });
+    expect(text).toContain("기획서로 쓴다.");
+    expect(text).not.toContain("React로 만든다.");
+  });
+
+  it("keeps it while the axis does apply", () => {
+    const text = assemble(linked, {
+      selections: { deliverable: "code", stack: "react" },
+      locale: "ko",
+    });
+    expect(text).toContain("React로 만든다.");
+  });
+
+  it("reports the axis as undecided rather than deleting it", () => {
+    const resolved = resolveAxes(linked, { selections: { deliverable: "plan", stack: "react" } });
+    const stack = resolved.find((r) => r.axis.id === "stack")!;
+    // Still in the list, so a value survives a temporary switch away and back.
+    expect(stack.applicable).toBe(false);
+    expect(stack.status).toBe("unset");
+    expect(stack.line).toBe("");
+  });
+
+  it("restores the value when the axis applies again", () => {
+    const selections = { deliverable: "code", stack: "react" };
+    expect(assemble(linked, { selections, locale: "ko" })).toContain("React로 만든다.");
   });
 });

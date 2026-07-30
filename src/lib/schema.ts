@@ -21,6 +21,15 @@ export interface Option {
   /** Marks a usual value with a small dot. Never auto-selected. */
   common?: boolean;
   /**
+   * What this choice costs or exposes, shown folded and never sent.
+   *
+   * `emit` states the choice; `effect` states what follows from it. Keeping them
+   * apart is the point: with the consequence inside `emit`, picking a colour also
+   * signed the user up to "accepts that thin content will show" — a judgement
+   * they never read. This one stays out of the prompt entirely.
+   */
+  effect?: string;
+  /**
    * Two or three lines showing what this direction actually reads like.
    *
    * `open` axes only, where a label alone does not convey the difference.
@@ -79,6 +88,32 @@ export interface Axis {
   placeholder?: string;
   /** `user` axes are added in the widget; they carry no options, norm or default. */
   origin?: "model" | "user";
+  /**
+   * Show this axis only while the named axes hold one of the listed values.
+   *
+   * For axes that stop *applying*, not axes judged unimportant — a stack is not a
+   * question you can answer about a plan document. Hiding by importance is what
+   * sections replaced, and this is deliberately not that.
+   */
+  showIf?: Record<string, string[]>;
+  /** Value combinations that cannot both hold. Reported, never blocked (C20). */
+  conflicts?: AxisConflict[];
+  /** Settled once the named axis is, so this one folds down to a stand-in. */
+  derivedFrom?: string;
+}
+
+/**
+ * A combination that cannot hold, and why.
+ *
+ * `reason` is shown to the user at the moment of choosing rather than at the end.
+ * Every contradiction observed in real use was "I did not know", not "I knew and
+ * chose anyway" — so saying it early is the whole fix, and blocking would only
+ * take away the second case (P4, C20).
+ */
+export interface AxisConflict {
+  /** Axis id to the value that clashes. All must match for the clash to hold. */
+  with: Record<string, string>;
+  reason: string;
 }
 
 /**
@@ -232,6 +267,9 @@ function parseOption(raw: unknown, index: number): Option | undefined {
   const preview = str(o.preview);
   if (preview) option.preview = preview;
 
+  const effect = str(o.effect);
+  if (effect) option.effect = effect;
+
   return option;
 }
 
@@ -313,6 +351,15 @@ function parseAxis(raw: unknown, index: number): Axis | undefined {
 
   if (a.origin === "user") axis.origin = "user";
 
+  const showIf = parseShowIf(a.showIf);
+  if (showIf) axis.showIf = showIf;
+
+  const conflicts = parseConflicts(a.conflicts);
+  if (conflicts) axis.conflicts = conflicts;
+
+  const derivedFrom = str(a.derivedFrom);
+  if (derivedFrom) axis.derivedFrom = derivedFrom;
+
   // A user-added axis carries no options, norm, common or default: inventing a
   // usual value for an item the model never thought of would be making it up.
   if (axis.origin === "user") {
@@ -381,6 +428,45 @@ function parseSection(raw: unknown, index: number): Section | undefined {
   const section: Section = { id: str(s.id) ?? `section-${index}`, label, axes };
   if (s.origin === "user") section.origin = "user";
   return section;
+}
+
+/** `{ axisId: ["value", ...] }`, dropping anything unusable. */
+function parseShowIf(raw: unknown): Record<string, string[]> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+
+  const out: Record<string, string[]> = {};
+  for (const [axisId, values] of Object.entries(raw as Record<string, unknown>)) {
+    const list = (Array.isArray(values) ? values : [values])
+      .map(str)
+      .filter((v): v is string => Boolean(v));
+    if (list.length) out[axisId] = list;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** Conflicts need both a condition and a reason: an unexplained one cannot be shown. */
+function parseConflicts(raw: unknown): AxisConflict[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+
+  const out: AxisConflict[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const c = entry as Record<string, unknown>;
+
+    const reason = str(c.reason);
+    if (!reason) continue;
+
+    const rawWith = c.with;
+    if (!rawWith || typeof rawWith !== "object" || Array.isArray(rawWith)) continue;
+
+    const conditions: Record<string, string> = {};
+    for (const [axisId, value] of Object.entries(rawWith as Record<string, unknown>)) {
+      const v = str(value);
+      if (v) conditions[axisId] = v;
+    }
+    if (Object.keys(conditions).length) out.push({ with: conditions, reason });
+  }
+  return out.length ? out : undefined;
 }
 
 /**

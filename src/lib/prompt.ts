@@ -25,8 +25,9 @@ export function clampSource(source: string | undefined): string | undefined {
 export const SCHEMA = `interface Option {
   value: string;
   label: string;
-  emit: string;        // the sentence inserted into the prompt; include the reason
+  emit: string;        // the sentence inserted into the prompt; state the choice only
   common?: boolean;    // usual value; shown as a small dot, never auto-selected
+  effect?: string;     // what follows from the choice; shown folded, never sent
   preview?: string;    // open axes: 2-3 lines showing what this direction reads like
 }
 
@@ -40,6 +41,9 @@ interface Axis {
   range?: { unit: string; min?: number; max?: number; emitTemplate: string };
   norm?: string;       // one line of help, e.g. "usually 32-48pt, 2-3x the body text"
   default?: string | number | null;   // if present, shown as decided-on-your-behalf
+  showIf?: Record<string, string[]>;  // show only while another axis holds these values
+  conflicts?: { with: Record<string, string>; reason: string }[];
+  derivedFrom?: string;               // settled once that axis is; folds to a stand-in
 }
 
 interface Section {
@@ -89,14 +93,39 @@ Then group those axes by what they are about, into sections:
 - Inside a section, put the axis that changes the result most at the top. Do not
   mark it in any way; the position is the whole signal.
 
+Axes are not independent. Say so where they are not:
+- \`showIf\` when an axis stops *applying*: a tech stack is not a question you can
+  answer about a plan document. Not for axes you judge unimportant — that is what
+  the sections are for.
+- \`conflicts\` when two values cannot both hold, with a \`reason\` in the user's
+  language. The user is told at the moment of choosing and is still allowed to
+  proceed; this informs, it never blocks.
+- \`derivedFrom\` when one axis settles another. "Portfolio" already implies the
+  audience, so mark the dependent axis and give it a \`default\`.
+Every axis that genuinely stands alone needs none of these. Do not invent
+dependencies to look thorough.
+
+An axis is worth asking about only if all three hold:
+1. Changing it later is expensive. If it is a one-line fix afterwards, give it a
+   \`default\` instead of asking.
+2. Getting it wrong actually changes the result.
+3. The request does not already answer it.
+
 Rules for the values you write:
 - Write every label, option label, \`emit\` sentence and \`norm\` in the same
   language the user wrote their request in.
-- \`emit\` is a full sentence that will be pasted into a prompt, and it carries its
-  own reason. Not "black" but "The cat's coat is black, so it reads clearly
-  against a light background."
+- \`emit\` is a full sentence that will be pasted into a prompt. State the choice
+  and nothing else: "The cat's coat is black." Whatever follows *from* that choice
+  belongs in \`effect\`, which is shown folded and never sent. With the consequence
+  inside \`emit\`, picking a colour also signs the user up to a judgement they
+  never read.
+- \`effect\` is that consequence, one line: "Reads clearly against a light
+  background, but flattens in low light." Optional, and only where there is a real
+  trade-off to name.
 - \`norm\` states the usual range as information, never as a recommendation about
-  the user's taste. "Usually 32-48pt" is fine; "you'll want 40pt" is not.
+  the user's taste. "Usually 32-48pt" is fine; "you'll want 40pt" is not. Write it
+  only where a real convention or figure exists — a range invented to look helpful
+  pulls the value toward itself, which is the opposite of informing.
 - \`common\` marks a conventional value. It is a dot on the chip, not a default.
 - Use \`range\` for anything continuous (size, count, duration) and give an
   \`emitTemplate\` containing \`{value}\`.

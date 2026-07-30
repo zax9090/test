@@ -21,7 +21,13 @@ import {
 import { createRoot } from "react-dom/client";
 import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react-with-deps";
 
-import { assemble, resolveAxes, type Selection, type State } from "../lib/assemble.js";
+import {
+  assemble,
+  findConflicts,
+  resolveAxes,
+  type Selection,
+  type State,
+} from "../lib/assemble.js";
 import { USER_AXIS_TEMPLATE, type AxisState, type Fix, type Unfolded } from "../lib/schema.js";
 import type { Locale } from "../lib/locale.js";
 import { strings } from "./i18n.js";
@@ -163,6 +169,18 @@ function App() {
   );
 
   const text = useMemo(() => (payload ? assemble(payload.unfolded, state) : ""), [payload, state]);
+
+  // Contradictions and inapplicable axes are recomputed from the same resolved
+  // list the rows render from, so what is dimmed and what is said cannot drift.
+  const conflicts = useMemo(
+    () => (payload ? findConflicts(payload.unfolded, resolved) : []),
+    [payload, resolved],
+  );
+
+  const hidden = useMemo(
+    () => new Set(resolved.filter((r) => !r.applicable).map((r) => r.axis.id)),
+    [resolved],
+  );
 
   const setAxis = useCallback((axisId: string, next: AxisState) => {
     setSelections((prev) => ({ ...prev, [axisId]: next }));
@@ -571,6 +589,8 @@ function App() {
           onAddAxis={addAxis}
           onRemoveAxis={removeAxis}
           onAddSection={addSection}
+          conflicts={conflicts}
+          hidden={hidden}
           symptoms={payload.unfolded.symptoms ?? []}
           chosenSymptoms={chosenSymptoms}
           onSymptom={toggleSymptom}

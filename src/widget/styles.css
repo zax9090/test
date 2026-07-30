@@ -968,3 +968,29 @@
     padding-left: 0;
   }
 }
+
+/* ── contradictions ───────────────────────────────────────────────────── */
+
+/*
+ * A row in a live contradiction is dimmed and says why, right where the choice
+ * was made. It is not disabled: every contradiction observed in real use was
+ * "I did not know", and refusing the choice would only take away the case where
+ * someone knows and means it (P4, docs/stage0-conflicts.md C20).
+ */
+.uu-row.is-clashing {
+  opacity: 0.72;
+}
+
+.uu-clash {
+  font-size: var(--font-text-xs-size, 11.5px);
+  color: var(--color-text-secondary, inherit);
+  opacity: 0.85;
+  padding: 0 2px 6px 94px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 420px) {
+  .uu-clash {
+    padding-left: 2px;
+  }
+}
