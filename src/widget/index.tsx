@@ -22,7 +22,7 @@ import { createRoot } from "react-dom/client";
 import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react-with-deps";
 
 import { assemble, resolveAxes, type Selection, type State } from "../lib/assemble.js";
-import type { Fix, Unfolded } from "../lib/schema.js";
+import { USER_AXIS_TEMPLATE, type AxisState, type Fix, type Unfolded } from "../lib/schema.js";
 import type { Locale } from "../lib/locale.js";
 import { strings } from "./i18n.js";
 import { AxisList } from "./AxisList.js";
@@ -164,16 +164,111 @@ function App() {
 
   const text = useMemo(() => (payload ? assemble(payload.unfolded, state) : ""), [payload, state]);
 
-  const setAxis = useCallback((axisId: string, value: Selection) => {
-    setSelections((prev) => ({ ...prev, [axisId]: value }));
+  const setAxis = useCallback((axisId: string, next: AxisState) => {
+    setSelections((prev) => ({ ...prev, [axisId]: next }));
+  }, []);
+
+  /**
+   * Add an empty axis to a section.
+   *
+   * A user axis has no options, no norm and no default — inventing a usual value
+   * for an item the model never thought of would be making it up. Its sentence is
+   * assembled from `{label}: {value}` with no particle handling, which is the one
+   * form that is safe in any language and against any value the user types.
+   *
+   * The label is empty on purpose: the row appears with the cursor in it. An axis
+   * with no label contributes nothing, so an abandoned one costs nothing either.
+   */
+  const addAxis = useCallback((sectionId: string) => {
+    setPayload((prev) => {
+      if (!prev) return prev;
+      const id = `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+      return {
+        ...prev,
+        unfolded: {
+          ...prev.unfolded,
+          sections: prev.unfolded.sections.map((section) =>
+            section.id === sectionId
+              ? {
+                  ...section,
+                  axes: [
+                    ...section.axes,
+                    {
+                      id,
+                      label: "",
+                      type: "open" as const,
+                      emitTemplate: USER_AXIS_TEMPLATE,
+                      origin: "user" as const,
+                    },
+                  ],
+                }
+              : section,
+          ),
+        },
+      };
+    });
+  }, []);
+
+  /** Only user axes are removable. A model axis is emptied, which needs no undo. */
+  const removeAxis = useCallback((axisId: string) => {
+    setPayload((prev) =>
+      prev
+        ? {
+            ...prev,
+            unfolded: {
+              ...prev.unfolded,
+              sections: prev.unfolded.sections.map((section) => ({
+                ...section,
+                axes: section.axes.filter((a) => a.id !== axisId),
+              })),
+            },
+          }
+        : prev,
+    );
+    setSelections((prev) => {
+      const next = { ...prev };
+      delete next[axisId];
+      return next;
+    });
+  }, []);
+
+  const addSection = useCallback((label: string) => {
+    setPayload((prev) =>
+      prev
+        ? {
+            ...prev,
+            unfolded: {
+              ...prev.unfolded,
+              sections: [
+                ...prev.unfolded.sections,
+                {
+                  id: `user-section-${Date.now().toString(36)}`,
+                  label,
+                  axes: [],
+                  origin: "user" as const,
+                },
+              ],
+            },
+          }
+        : prev,
+    );
   }, []);
 
   const toggleSymptom = useCallback((id: string) => {
     setChosenSymptoms((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
   }, []);
 
+  // A fix names option values, so each entry becomes a pressed chip rather than
+  // typed text — the sentence it emits is the model's, reason included.
   const applyFix = useCallback((fix: Fix) => {
-    setSelections((prev) => ({ ...prev, ...fix.set }));
+    setSelections((prev) => {
+      const next = { ...prev };
+      for (const [axisId, value] of Object.entries(fix.set)) {
+        next[axisId] = value;
+      }
+      return next;
+    });
   }, []);
 
   /**
@@ -473,6 +568,9 @@ function App() {
           sections={payload.unfolded.sections}
           resolved={resolved}
           onChange={setAxis}
+          onAddAxis={addAxis}
+          onRemoveAxis={removeAxis}
+          onAddSection={addSection}
           symptoms={payload.unfolded.symptoms ?? []}
           chosenSymptoms={chosenSymptoms}
           onSymptom={toggleSymptom}

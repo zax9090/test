@@ -40,7 +40,7 @@ const unfolded: Unfolded = {
         {
           id: "length",
           label: "분량",
-          type: "select",
+          type: "closed",
           options: [{ value: "short", label: "짧게", emit: "짧게 쓴다." }],
         },
       ],

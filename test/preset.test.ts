@@ -27,7 +27,8 @@ const withPreview: Unfolded = {
         {
           id: "voice",
           label: "문체",
-          type: "sample",
+          type: "open",
+          emitTemplate: "문체는 {value}.",
           options: [
             // Written from the user's document, exactly as the instruction asks.
             { value: "plain", label: "담백하게", emit: "담백하게 쓴다.", preview: MATERIAL },

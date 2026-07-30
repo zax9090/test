@@ -27,7 +27,8 @@ const unfolded: Unfolded = {
         {
           id: "voice",
           label: "문체",
-          type: "sample",
+          type: "open",
+          emitTemplate: "문체는 {value}.",
           options: [
             // Written from the user's document — must not reach the file.
             { value: "plain", label: "담백하게", emit: "담백하게.", preview: "예산 동결 결정" },

@@ -27,14 +27,16 @@ export const SCHEMA = `interface Option {
   label: string;
   emit: string;        // the sentence inserted into the prompt; include the reason
   common?: boolean;    // usual value; shown as a small dot, never auto-selected
-  preview?: string;    // sample axes only: 2-3 lines showing what this reads like
+  preview?: string;    // open axes: 2-3 lines showing what this direction reads like
 }
 
 interface Axis {
   id: string;
   label: string;
-  type: 'select' | 'multi' | 'range' | 'sample';
-  options?: Option[];
+  type: 'open' | 'closed' | 'multi' | 'range';
+  options?: Option[];       // 'open': examples, 3-6. 'closed'/'multi': the choices
+  emitTemplate?: string;    // 'open' only, required, must contain {value}
+  placeholder?: string;     // 'open' only: an example NOT in the list
   range?: { unit: string; min?: number; max?: number; emitTemplate: string };
   norm?: string;       // one line of help, e.g. "usually 32-48pt, 2-3x the body text"
   default?: string | number | null;   // if present, shown as decided-on-your-behalf
@@ -98,11 +100,31 @@ Rules for the values you write:
 - \`common\` marks a conventional value. It is a dot on the chip, not a default.
 - Use \`range\` for anything continuous (size, count, duration) and give an
   \`emitTemplate\` containing \`{value}\`.
-- Use \`sample\` for axes best judged by seeing a sample rather than reading a
-  label — voice, register, opening line. On those, give every option a
-  \`preview\`: 2-3 lines written in that direction, using the source material if
-  there is any, so the difference can be read rather than imagined.
-- \`default\` only where a value genuinely must exist for the task to proceed.`;
+- \`default\` only where a value genuinely must exist for the task to proceed.
+
+Choosing between \`open\` and \`closed\` — ask one question: can the values of this
+axis be listed exhaustively?
+- Listable, and genuinely all of them: \`closed\`. Aspect ratio really is 1:1,
+  16:9, 9:16. Two to five options.
+- Not listable: \`open\`. Coat colour, breed, art style, lighting, tone, audience.
+  There is no complete list, and a list of five would tell the user those are the
+  options when they are not.
+- When it is unclear, use \`open\`. Closing an axis hides values the user wanted;
+  opening one that could have been closed costs nothing.
+
+On an \`open\` axis:
+- \`options\` are *examples*, not a menu. Give 3-6, picking the most common or the
+  most unlike each other. The user will type something that is not there, and
+  that is the expected outcome, not a failure.
+- \`emitTemplate\` is required and must contain \`{value}\`. Whatever the user types
+  goes in that slot verbatim, so write a sentence that reads correctly with any
+  value: "The coat is {value}." — never "The coat is {value}, which photographs
+  well", because that reason may be false for what they typed.
+- \`placeholder\` should name a value that is *not* in \`options\`, so the box
+  visibly invites something of the user's own.
+- Give an option a \`preview\` when a label cannot convey the difference — voice,
+  register, an opening line. 2-3 lines written in that direction, using the source
+  material if there is any, so the difference can be read rather than imagined.`;
 
 export interface PromptInput {
   request: string;

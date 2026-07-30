@@ -20,7 +20,7 @@ const cat: Unfolded = {
         {
           id: "coat",
           label: "털색",
-          type: "select",
+          type: "closed",
           options: [
             {
               value: "black",
@@ -34,7 +34,7 @@ const cat: Unfolded = {
         {
           id: "pose",
           label: "자세",
-          type: "select",
+          type: "closed",
           options: [
             { value: "lying", label: "누움", emit: "누워 있는 자세로 그린다." },
             { value: "sitting", label: "앉음", emit: "앉아 있는 자세로 그린다." },

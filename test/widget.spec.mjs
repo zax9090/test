@@ -26,7 +26,7 @@ const PAYLOAD = {
             {
               id: "coat",
               label: "털색",
-              type: "select",
+              type: "closed",
               norm: "보통 단색이 인식률이 높습니다",
               options: [
                 { value: "black", label: "검정", emit: "털색은 검은색으로 한다.", common: true },
@@ -36,7 +36,7 @@ const PAYLOAD = {
             {
               id: "pose",
               label: "자세",
-              type: "select",
+              type: "closed",
               options: [
                 { value: "lying", label: "누움", emit: "누워 있는 자세로 그린다." },
                 { value: "sitting", label: "앉음", emit: "앉아 있는 자세로 그린다." },
@@ -51,7 +51,7 @@ const PAYLOAD = {
             {
               id: "light",
               label: "조명",
-              type: "select",
+              type: "closed",
               default: "soft",
               options: [
                 { value: "soft", label: "부드럽게", emit: "부드러운 조명을 쓴다." },
@@ -61,7 +61,7 @@ const PAYLOAD = {
             {
               id: "bg",
               label: "배경",
-              type: "select",
+              type: "closed",
               options: [{ value: "plain", label: "단색", emit: "배경은 단색으로 한다." }],
             },
           ],
@@ -334,7 +334,7 @@ test("switches its own chrome to English for an English request", async ({ page 
               {
                 id: "tone",
                 label: "Tone",
-                type: "select",
+                type: "closed",
                 options: [{ value: "plain", label: "Plain", emit: "Keep the tone plain." }],
               },
             ],
@@ -455,7 +455,9 @@ const SAMPLE_PAYLOAD = {
             {
               id: "voice",
               label: "문체",
-              type: "sample",
+              type: "open",
+              emitTemplate: "문체는 {value}으로 쓴다.",
+              placeholder: "예: 사무적이지만 딱딱하지 않게",
               options: [
                 {
                   value: "plain",
@@ -480,21 +482,90 @@ const SAMPLE_PAYLOAD = {
   },
 };
 
-test("a sample axis shows each direction as readable text, not a label", async ({ page }) => {
+test("an open axis leads with its box, not with its options", async ({ page }) => {
   const frame = await open(page, SAMPLE_PAYLOAD);
 
-  await expect(frame.locator(".uu-card")).toHaveCount(3);
-  await expect(frame.locator(".uu-card").first()).toContainText("예산은 3분기까지 동결된다.");
-  // A direction with no sample yet is still offered — the card is just lighter.
-  await expect(frame.locator(".uu-card").nth(2)).toContainText("아주 짧게");
+  // The box is the control. The examples are a hint underneath it.
+  await expect(frame.locator(".uu-open-input")).toBeVisible();
+  await expect(frame.locator(".uu-example")).toHaveCount(3);
+
+  const boxY = (await frame.locator(".uu-open-input").boundingBox()).y;
+  const exampleY = (await frame.locator(".uu-example").first().boundingBox()).y;
+  expect(boxY).toBeLessThan(exampleY);
+
+  // Examples are not chips, so nothing here can read as a menu of the values.
+  await expect(frame.locator(".uu-chip")).toHaveCount(0);
 });
 
-test("picking a card decides the axis", async ({ page }) => {
+test("the box invites a value that is not in the list", async ({ page }) => {
+  const frame = await open(page, SAMPLE_PAYLOAD);
+  await expect(frame.locator(".uu-open-input")).toHaveAttribute(
+    "placeholder",
+    "예: 사무적이지만 딱딱하지 않게",
+  );
+});
+
+test("pressing an example fills the box and emits the sentence written for it", async ({
+  page,
+}) => {
   const frame = await open(page, SAMPLE_PAYLOAD);
 
-  await frame.locator(".uu-card", { hasText: "담백하게" }).click();
+  await frame.locator(".uu-example", { hasText: "담백하게" }).click();
+  await expect(frame.locator(".uu-open-input")).toHaveValue("담백하게");
+  // The option's own sentence, reason included — not the bare template.
   await expect(prompt(frame)).toContainText("담백한 문체로 쓴다.");
-  await expect(frame.locator(".uu-card.is-on")).toHaveCount(1);
+});
+
+test("an example is emphasised, never drawn as pressed", async ({ page }) => {
+  const frame = await open(page, SAMPLE_PAYLOAD);
+  const example = frame.locator(".uu-example", { hasText: "담백하게" });
+
+  await example.click();
+  await expect(example).toHaveClass(/is-current/);
+  // No pressed state: it is a hint that matches, not a selected control.
+  await expect(example).not.toHaveAttribute("aria-pressed", "true");
+});
+
+test("typing a value nobody listed goes through the template, with no borrowed reason", async ({
+  page,
+}) => {
+  const frame = await open(page, SAMPLE_PAYLOAD);
+
+  await frame.locator(".uu-open-input").fill("사무적이지만 딱딱하지 않게");
+  await expect(prompt(frame)).toContainText("문체는 사무적이지만 딱딱하지 않게으로 쓴다.");
+  // The model's reason belonged to its own option, not to the user's wording.
+  await expect(prompt(frame)).not.toContainText("담백한 문체로 쓴다.");
+});
+
+test("editing a pressed example makes the value the user's own", async ({ page }) => {
+  const frame = await open(page, SAMPLE_PAYLOAD);
+
+  await frame.locator(".uu-example", { hasText: "담백하게" }).click();
+  await expect(prompt(frame)).toContainText("담백한 문체로 쓴다.");
+
+  // One character away from the example, and the sentence changes with it.
+  await frame.locator(".uu-open-input").fill("담백하게, 다만 건조하지 않게");
+  await expect(prompt(frame)).toContainText("문체는 담백하게, 다만 건조하지 않게으로 쓴다.");
+  await expect(prompt(frame)).not.toContainText("담백한 문체로 쓴다.");
+});
+
+test("emptying the box removes the line entirely", async ({ page }) => {
+  const frame = await open(page, SAMPLE_PAYLOAD);
+  const before = await prompt(frame).innerText();
+
+  await frame.locator(".uu-open-input").fill("아무 값");
+  await expect(prompt(frame)).not.toHaveText(before);
+
+  await frame.locator(".uu-open-input").fill("");
+  await expect(prompt(frame)).toHaveText(before);
+});
+
+test("whitespace alone counts as empty", async ({ page }) => {
+  const frame = await open(page, SAMPLE_PAYLOAD);
+  const before = await prompt(frame).innerText();
+
+  await frame.locator(".uu-open-input").fill("   ");
+  await expect(prompt(frame)).toHaveText(before);
 });
 
 // ── symptoms ───────────────────────────────────────────────────────────────
@@ -515,7 +586,7 @@ const SYMPTOM_PAYLOAD = {
             {
               id: "coat",
               label: "털색",
-              type: "select",
+              type: "closed",
               options: [{ value: "black", label: "검정", emit: "털색은 검은색." }],
             },
           ],
@@ -819,7 +890,7 @@ const LOADED = {
             {
               id: "structure",
               label: "구조",
-              type: "select",
+              type: "closed",
               options: [
                 { value: "first", label: "결론 먼저", emit: "결론을 먼저 쓴다." },
                 { value: "last", label: "결론 나중", emit: "결론을 마지막에 쓴다." },

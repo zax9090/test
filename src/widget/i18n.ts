@@ -48,6 +48,12 @@ export interface Strings {
   presetDelete: string;
   presetNamePlaceholder: string;
   presetLoaded: string;
+  axisAdd: string;
+  axisRemove: string;
+  sectionAdd: string;
+  axisLabelPlaceholder: string;
+  axisValuePlaceholder: string;
+  sectionNamePlaceholder: string;
 }
 
 const ko: Strings = {
@@ -57,7 +63,7 @@ const ko: Strings = {
   more: (n) => `더 정하기 (${n})`,
   less: "접기",
   freeform: "더 넣을 말",
-  freeformPlaceholder: "",
+  freeformPlaceholder: "축으로 잡히지 않는 요구가 있다면",
   source: "자료",
   symptoms: "걸리는 점",
   sourcePlaceholder: "",
@@ -88,6 +94,12 @@ const ko: Strings = {
   presetDelete: "삭제",
   presetNamePlaceholder: "이름",
   presetLoaded: "프리셋에서 불러옴",
+  axisAdd: "+ 항목 추가",
+  axisRemove: "삭제",
+  sectionAdd: "+ 묶음 추가",
+  axisLabelPlaceholder: "항목 이름 (예: 털 길이)",
+  axisValuePlaceholder: "이 항목을 어떻게 할지",
+  sectionNamePlaceholder: "묶음 이름",
 };
 
 const en: Strings = {
@@ -97,7 +109,7 @@ const en: Strings = {
   more: (n) => `Decide more (${n})`,
   less: "Collapse",
   freeform: "Anything else",
-  freeformPlaceholder: "",
+  freeformPlaceholder: "Anything the axes do not cover",
   source: "Source",
   symptoms: "What's off",
   sourcePlaceholder: "",
@@ -129,6 +141,12 @@ const en: Strings = {
   presetDelete: "Delete",
   presetNamePlaceholder: "Name",
   presetLoaded: "from a preset",
+  axisAdd: "+ Add an item",
+  axisRemove: "Remove",
+  sectionAdd: "+ Add a group",
+  axisLabelPlaceholder: "Item name (e.g. coat length)",
+  axisValuePlaceholder: "What to do about it",
+  sectionNamePlaceholder: "Group name",
 };
 
 export function strings(locale: Locale): Strings {

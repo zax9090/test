@@ -284,6 +284,167 @@
   opacity: 0.4;
 }
 
+/* ── open axes ────────────────────────────────────────────────────────── */
+
+/*
+ * The box is the control; the examples underneath are hints. That order is the
+ * whole point of this row — five chips said "these are the values", when the
+ * honest answer is that nobody can list every coat colour.
+ */
+.uu-open {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  position: relative;
+}
+
+.uu-open-input {
+  width: 100%;
+}
+
+/*
+ * A value nobody typed. Dashed, because dotted already means undecided in this
+ * widget's icon grammar — the status mark beside the row is saying the same
+ * thing, so no per-row label is needed. See docs/stage0-conflicts.md (C14).
+ */
+.uu-input.is-standin {
+  border-style: dashed;
+  opacity: 0.8;
+}
+
+.uu-open-clear {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+}
+
+/*
+ * Examples read as text, not as buttons. Made pressable-looking they would be a
+ * menu again, which is what this replaced. They wrap — hiding them behind a
+ * horizontal scroll would lose the hint entirely.
+ */
+.uu-examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.uu-example {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 1px 0;
+  font: inherit;
+  font-size: var(--font-text-xs-size, 11.5px);
+  color: var(--color-text-tertiary, inherit);
+  opacity: 0.7;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  /* Tight against the word: the `common` dot has to read as belonging to this
+     example, not as another separator. */
+  gap: 2px;
+}
+
+/*
+ * Smaller than a chip's dot and hard against the label. At the same size as the
+ * separator middot the two were indistinguishable — "검정 • · 흰색" read as two
+ * separators in a row, so neither mark meant anything.
+ */
+.uu-example .uu-dot {
+  width: 2px;
+  height: 2px;
+}
+
+.uu-example:hover {
+  opacity: 1;
+}
+
+/* The matching example is emphasised only — never drawn as pressed. */
+.uu-example.is-current {
+  opacity: 1;
+  color: var(--color-text-primary, inherit);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+/* The separator gets the room instead, so the rhythm of the list is the gap. */
+.uu-sep::before {
+  content: "·";
+  opacity: 0.35;
+  font-size: var(--font-text-xs-size, 11.5px);
+  margin: 0 7px;
+}
+
+/* ── added axes and groups ────────────────────────────────────────────── */
+
+/*
+ * A quiet line, not a button. It has to be findable without competing with the
+ * axes themselves — and it is never behind a fold, because an add affordance
+ * nobody finds is the same as not having one.
+ */
+.uu-add {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 4px 2px;
+  font: inherit;
+  font-size: var(--font-text-xs-size, 11.5px);
+  color: var(--color-text-tertiary, inherit);
+  opacity: 0.65;
+  cursor: pointer;
+  text-align: left;
+}
+
+.uu-add:hover {
+  opacity: 1;
+}
+
+.uu-add-axis {
+  margin-left: 94px;
+}
+
+.uu-add-section {
+  margin-top: 18px;
+}
+
+/* Label and value side by side, matching the model rows' alignment. */
+.uu-user-axis {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 2px;
+}
+
+.uu-user-axis .uu-user-label {
+  flex: 0 0 84px;
+}
+
+.uu-user-axis .uu-user-value {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.uu-new-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+@media (max-width: 420px) {
+  .uu-add-axis {
+    margin-left: 0;
+  }
+
+  .uu-user-axis {
+    flex-wrap: wrap;
+  }
+
+  .uu-user-axis .uu-user-label {
+    flex-basis: 100%;
+  }
+}
+
 /* ── sections ─────────────────────────────────────────────────────────── */
 
 /*

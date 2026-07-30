@@ -23,10 +23,13 @@ export interface Option {
   /**
    * Two or three lines showing what this direction actually reads like.
    *
-   * Only meaningful on a `sample` axis, where a label alone does not convey the
-   * difference. Written by the extracting model along with the axes — there is
-   * no second pass, because reaching a model again would mean another round
-   * through the conversation.
+   * `open` axes only, where a label alone does not convey the difference.
+   * Written by the extracting model along with the axes — there is no second
+   * pass, because reaching a model again would mean another round through the
+   * conversation.
+   *
+   * Never stored in a preset: previews are written from the user's material, so
+   * keeping one would keep the material. See `lib/preset.ts`.
    */
   preview?: string;
 }
@@ -39,17 +42,73 @@ export interface AxisRange {
   emitTemplate: string;
 }
 
+/**
+ * How an axis is answered.
+ *
+ * The question that decides it is whether the values can be listed exhaustively.
+ * `털색` cannot — mackerel tabby, cream, point, russian blue all exist and a list
+ * of five would quietly tell the user those are the options. `비율` can: 1:1,
+ * 16:9, 9:16 really is all of them.
+ *
+ * When it is unclear the answer is `open`. Closing an axis that should be open
+ * hides values the user would have wanted; opening one that could have been
+ * closed costs a little redundancy and nothing else.
+ */
+export type AxisType = "open" | "closed" | "multi" | "range";
+
 export interface Axis {
   id: string;
   label: string;
-  type: "select" | "multi" | "range" | "sample";
+  type: AxisType;
+  /** Choices on `closed`/`multi`. On `open` these are *examples*, not a menu. */
   options?: Option[];
+  /**
+   * Sentence for a value the user typed, containing `{value}`.
+   *
+   * Required on `open`, because the whole point is that the value may be one
+   * nobody listed. A missing or placeholder-less template is synthesised rather
+   * than treated as fatal — see `parseAxis`.
+   */
+  emitTemplate?: string;
   range?: AxisRange;
   /** One-line help. The usual range, not a preference. */
   norm?: string;
   /** When present the value is applied on the user's behalf. */
   default?: string | number | null;
+  /** `open` only. Hints that typing something unlisted is expected. */
+  placeholder?: string;
+  /** `user` axes are added in the widget; they carry no options, norm or default. */
+  origin?: "model" | "user";
 }
+
+/**
+ * What an axis currently holds, and where it came from.
+ *
+ * The provenance is load-bearing, not bookkeeping: a chip the user pressed emits
+ * the sentence the model wrote for it, reason included, while the same text typed
+ * by hand can only be dropped into `emitTemplate`. Those are different sentences,
+ * so the state has to remember which happened.
+ *
+ * `options` is not in the brief's list, which covers `open`/`range` and stops.
+ * `multi` still needs to hold several chips at once, so it is added here rather
+ * than left to a second parallel representation.
+ */
+export type AxisState =
+  | { kind: "none" }
+  | { kind: "option"; optionValue: string }
+  | { kind: "options"; optionValues: string[] }
+  | { kind: "typed"; text: string }
+  | { kind: "number"; value: number };
+
+export const NO_STATE: AxisState = { kind: "none" };
+
+/** The one template a user-added axis emits through. Never stored, always this. */
+export const USER_AXIS_TEMPLATE = "{label}: {value}";
+
+export const VALUE_PLACEHOLDER = "{value}";
+
+/** Examples above this stop being examples and start reading as a menu. */
+const MAX_OPEN_EXAMPLES = 6;
 
 /**
  * A named group of axes.
@@ -114,7 +173,6 @@ export function allAxes(unfolded: Unfolded): Axis[] {
   return unfolded.sections.flatMap((s) => s.axes);
 }
 
-const AXIS_TYPES = new Set(["select", "multi", "range", "sample"]);
 const MAX_FIXES = 4;
 /** Enough to show a real fork without turning the field into a menu. */
 const MAX_ALTERNATIVES = 3;
@@ -186,39 +244,81 @@ function parseAxis(raw: unknown, index: number): Axis | undefined {
   const id = str(a.id) ?? `axis-${index}`;
 
   const rawType = str(a.type);
-  const options = Array.isArray(a.options)
+  let options = Array.isArray(a.options)
     ? (a.options.map(parseOption).filter(Boolean) as Option[])
     : [];
 
   const rawRange =
     a.range && typeof a.range === "object" ? (a.range as Record<string, unknown>) : undefined;
-  const emitTemplate = rawRange ? str(rawRange.emitTemplate) : undefined;
+  const rangeTemplate = rawRange ? str(rawRange.emitTemplate) : undefined;
   const range: AxisRange | undefined =
-    rawRange && emitTemplate
+    rawRange && rangeTemplate
       ? {
           unit: str(rawRange.unit) ?? "",
-          emitTemplate,
+          emitTemplate: rangeTemplate,
           ...(num(rawRange.min) !== undefined ? { min: num(rawRange.min) } : {}),
           ...(num(rawRange.max) !== undefined ? { max: num(rawRange.max) } : {}),
         }
       : undefined;
 
-  // Trust the declared type only if it can actually be rendered; otherwise infer
-  // from what the axis carries. A "range" with no usable template would render
-  // as a dead row.
-  let type: Axis["type"];
-  if (rawType && AXIS_TYPES.has(rawType)) {
-    type = rawType as Axis["type"];
-    if (type === "range" && !range) type = options.length ? "select" : "sample";
+  // Trust the declared type only where it can actually be rendered. `sample` is
+  // gone; a payload still using it was describing an axis judged by reading the
+  // options, which is what `open` with previews now is.
+  let type: AxisType;
+  if (rawType === "open" || rawType === "closed" || rawType === "multi") {
+    type = rawType;
+  } else if (rawType === "range") {
+    // A range with no usable template is not a range. Fall back on what it carries.
+    type = range ? "range" : "open";
+  } else if (rawType === "sample" || rawType === "select") {
+    // The two retired names. `select` meant "pick from this list", which is
+    // `closed` only if the list is genuinely complete — and it usually was not,
+    // which is the reason this rewrite happened. Opening is the safer default.
+    type = options.length > 0 && options.length <= 5 ? "closed" : "open";
   } else {
-    type = range ? "range" : "select";
+    type = range ? "range" : "open";
   }
 
-  if (type !== "range" && options.length === 0 && type !== "sample") return undefined;
+  if (type === "range" && !range) type = "open";
+
+  let emitTemplate = str(a.emitTemplate);
+
+  if (type === "open") {
+    // Examples past a handful stop reading as examples. Trimmed rather than
+    // rejected: the axis is still worth having, only the tail is noise.
+    if (options.length > MAX_OPEN_EXAMPLES) options = options.slice(0, MAX_OPEN_EXAMPLES);
+
+    // The brief says drop an `open` axis whose template has no `{value}`. Losing
+    // a whole axis is the one outcome this tool cannot afford — an axis nobody
+    // sees is exactly the failure it exists to prevent — so the template is
+    // synthesised from the label instead, the same shape a user-added axis uses.
+    if (!emitTemplate || !emitTemplate.includes(VALUE_PLACEHOLDER)) {
+      emitTemplate = USER_AXIS_TEMPLATE.replace("{label}", label);
+    }
+  } else {
+    emitTemplate = undefined;
+  }
+
+  // `closed` and `multi` are nothing but their chips, so with none they cannot be
+  // answered at all. `open` always has its box.
+  if ((type === "closed" || type === "multi") && options.length === 0) return undefined;
 
   const axis: Axis = { id, label, type };
   if (options.length) axis.options = options;
+  if (emitTemplate) axis.emitTemplate = emitTemplate;
   if (range) axis.range = range;
+
+  const placeholder = str(a.placeholder);
+  if (type === "open" && placeholder) axis.placeholder = placeholder;
+
+  if (a.origin === "user") axis.origin = "user";
+
+  // A user-added axis carries no options, norm, common or default: inventing a
+  // usual value for an item the model never thought of would be making it up.
+  if (axis.origin === "user") {
+    delete axis.options;
+    return axis;
+  }
 
   const norm = str(a.norm);
   if (norm) axis.norm = norm;
@@ -395,7 +495,8 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "purpose",
           label: "목적",
-          type: "select",
+          type: "open",
+          emitTemplate: "글의 목적은 {value}.",
           options: [
             {
               value: "inform",
@@ -417,7 +518,8 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "audience",
           label: "독자",
-          type: "select",
+          type: "open",
+          emitTemplate: "읽는 사람은 {value}.",
           options: [
             {
               value: "expert",
@@ -439,7 +541,8 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "length",
           label: "분량",
-          type: "select",
+          type: "open",
+          emitTemplate: "분량은 {value}.",
           options: [
             { value: "short", label: "짧게", emit: "핵심만 담아 짧게 쓴다." },
             { value: "medium", label: "보통", emit: "요점과 근거를 함께 담아 보통 길이로 쓴다." },
@@ -449,7 +552,8 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "format",
           label: "형식",
-          type: "select",
+          type: "open",
+          emitTemplate: "형식은 {value}.",
           options: [
             { value: "prose", label: "줄글", emit: "문단으로 이어지는 줄글로 쓴다." },
             { value: "bullets", label: "목록", emit: "항목을 나눈 목록 형태로 쓴다." },
@@ -459,7 +563,8 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "tone",
           label: "톤",
-          type: "select",
+          type: "open",
+          emitTemplate: "톤은 {value}.",
           options: [
             { value: "plain", label: "담백하게", emit: "수식을 줄이고 담백한 톤으로 쓴다." },
             { value: "formal", label: "격식", emit: "격식을 갖춘 문어체로 쓴다." },
@@ -471,7 +576,8 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "purpose",
           label: "Purpose",
-          type: "select",
+          type: "open",
+          emitTemplate: "The purpose is {value}.",
           options: [
             {
               value: "inform",
@@ -493,7 +599,8 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "audience",
           label: "Audience",
-          type: "select",
+          type: "open",
+          emitTemplate: "The reader is {value}.",
           options: [
             {
               value: "expert",
@@ -515,7 +622,8 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "length",
           label: "Length",
-          type: "select",
+          type: "open",
+          emitTemplate: "The length is {value}.",
           options: [
             { value: "short", label: "Short", emit: "Keep it short — the essentials only." },
             {
@@ -533,7 +641,8 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "format",
           label: "Format",
-          type: "select",
+          type: "open",
+          emitTemplate: "The format is {value}.",
           options: [
             { value: "prose", label: "Prose", emit: "Write it as connected paragraphs." },
             { value: "bullets", label: "List", emit: "Write it as a list of separated points." },
@@ -547,7 +656,8 @@ export function fallbackUnfolded(request: string): Unfolded {
         {
           id: "tone",
           label: "Tone",
-          type: "select",
+          type: "open",
+          emitTemplate: "The tone is {value}.",
           options: [
             { value: "plain", label: "Plain", emit: "Keep the tone plain and unadorned." },
             { value: "formal", label: "Formal", emit: "Use a formal register." },
