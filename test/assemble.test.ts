@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   assemble,
   assembledLength,
+  describeSelection,
   emptyState,
   findConflicts,
   isApplicable,
@@ -582,5 +583,116 @@ describe("an inapplicable axis contributes nothing", () => {
   it("restores the value when the axis applies again", () => {
     const selections = { deliverable: "code", stack: "react" };
     expect(assemble(linked, { selections, locale: "ko" })).toContain("React로 만든다.");
+  });
+});
+
+// ── the structure sent alongside the prose ─────────────────────────────────
+
+describe("describeSelection", () => {
+  const report = (over: Partial<State> = {}, extra?: { fixApplied?: string }) =>
+    describeSelection(cat, state(over), extra);
+
+  it("separates chosen, decided-for-you and untouched", () => {
+    // A flat list of values cannot tell "left to the AI" from "a value was applied
+    // on their behalf", and those two want different treatment.
+    const withDefault = withAxis(cat, "pose", { default: "lying" });
+    const r = describeSelection(withDefault, state({ selections: { coat: "black" } }));
+
+    expect(Object.keys(r.chosen)).toEqual(["coat"]);
+    expect(Object.keys(r.standIn)).toEqual(["pose"]);
+    expect(r.untouched).toEqual(["mood", "width"]);
+  });
+
+  it("carries provenance, which the prose cannot", () => {
+    const open: Unfolded = withAxis(cat, "coat", {
+      type: "open",
+      emitTemplate: "털색은 {value}.",
+    });
+
+    const pressed = describeSelection(open, state({ selections: { coat: "black" } }));
+    expect(pressed.chosen.coat?.kind).toBe("option");
+
+    const typed = describeSelection(
+      open,
+      state({ selections: { coat: { kind: "typed", text: "고등어 태비" } } }),
+    );
+    expect(typed.chosen.coat?.kind).toBe("typed");
+    expect(typed.chosen.coat?.value).toBe("고등어 태비");
+  });
+
+  it("keeps the label and the section, so the grouping survives the trip", () => {
+    const r = report({ selections: { coat: "black" } });
+    expect(r.chosen.coat?.label).toBe("털색");
+    expect(r.chosen.coat?.section).toBe("subject");
+  });
+
+  it("reports a multi selection as a list and a range as a number", () => {
+    const r = report({ selections: { mood: ["warm", "quiet"], width: 1024 } });
+    expect(r.chosen.mood?.value).toEqual(["warm", "quiet"]);
+    expect(r.chosen.mood?.kind).toBe("options");
+    expect(r.chosen.width?.value).toBe(1024);
+    expect(r.chosen.width?.kind).toBe("number");
+  });
+
+  it("carries the intent and the goal", () => {
+    const withGoal: Unfolded = {
+      ...cat,
+      goal: { selected: "사실적인 그림", alternatives: ["만화풍"] },
+    };
+    const r = describeSelection(withGoal, state());
+    expect(r.intent).toBe(cat.intent);
+    expect(r.goal).toBe("사실적인 그림");
+  });
+
+  it("carries symptoms, freeform and the applied correction", () => {
+    const r = report(
+      { symptoms: ["flat"], freeform: "손그림 느낌으로" },
+      { fixApplied: "더 짧게" },
+    );
+    expect(r.symptoms).toEqual(["flat"]);
+    expect(r.freeform).toBe("손그림 느낌으로");
+    expect(r.fixApplied).toBe("더 짧게");
+  });
+
+  it("drops a symptom id that no longer exists", () => {
+    expect(report({ symptoms: ["ghost"] }).symptoms).toBeUndefined();
+  });
+
+  it("never carries the source material, and has no field for it", () => {
+    const r = report({ source: "예산 동결 결정", selections: { coat: "black" } });
+    expect(JSON.stringify(r)).not.toContain("예산 동결");
+    expect("source" in r).toBe(false);
+  });
+
+  it("names contradictions the user was warned about and kept", () => {
+    const clashing: Unfolded = withAxis(cat, "coat", {
+      conflicts: [{ with: { pose: "lying" }, reason: "누운 자세에서는 털색이 드러나지 않는다" }],
+    });
+    const r = describeSelection(clashing, state({ selections: { coat: "black", pose: "lying" } }));
+    expect(r.conflicts).toHaveLength(1);
+    expect(r.conflicts?.[0]?.reason).toContain("드러나지 않는다");
+  });
+
+  it("lists an inapplicable axis apart from an untouched one", () => {
+    const linked: Unfolded = withAxis(cat, "pose", { showIf: { coat: ["white"] } });
+    const r = describeSelection(linked, state({ selections: { coat: "black" } }));
+
+    // Not skipped — never asked. The model should not treat the two the same.
+    expect(r.inapplicable).toContain("pose");
+    expect(r.untouched).not.toContain("pose");
+  });
+
+  it("agrees with the prose about what was decided", () => {
+    const s = state({ selections: { coat: "black", mood: ["warm"] } });
+    const r = describeSelection(cat, s);
+    const text = assemble(cat, s);
+
+    for (const id of Object.keys(r.chosen)) {
+      expect(text).toContain(
+        cat.sections.flatMap((x) => x.axes).find((a) => a.id === id)!.label ? "" : "",
+      );
+    }
+    // Every chosen axis contributed a line, and no untouched one did.
+    expect(text.split("\n").filter(Boolean)).toHaveLength(1 + Object.keys(r.chosen).length);
   });
 });

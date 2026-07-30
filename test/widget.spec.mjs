@@ -1142,3 +1142,76 @@ test("clearing one side clears the warning", async ({ page }) => {
   await frame.locator(".uu-chip", { hasText: "이미 구체적" }).click();
   await expect(frame.locator(".uu-clash")).toHaveCount(0);
 });
+
+// ── structure alongside the prompt ─────────────────────────────────────────
+
+test("send hands over the structure as well as the prose", async ({ page }) => {
+  const frame = await open(page);
+
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await resultTab(frame).click();
+  await frame.locator(".uu-btn", { hasText: "대화로 보내기" }).click();
+
+  await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__harness.structured.length)).toBe(1);
+
+  const report = await page.evaluate(() => window.__harness.structured[0]);
+  // Which axis each sentence came from — the thing the prose cannot say.
+  expect(report.chosen.coat.value).toBe("black");
+  expect(report.chosen.coat.kind).toBe("option");
+  expect(report.chosen.coat.section).toBe("subject");
+});
+
+test("the visible message stays the prompt the user read", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await resultTab(frame).click();
+
+  const shown = await prompt(frame).innerText();
+  await frame.locator(".uu-btn", { hasText: "대화로 보내기" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
+
+  // Structure is an addition, not a replacement: sending ids instead would leave
+  // the copy button nothing to copy (C18).
+  const sent = await page.evaluate(() => window.__harness.sent[0]);
+  expect(sent.text).toBe(shown);
+  expect(sent.text).toContain("털색은 검은색");
+});
+
+test("the structure tells untouched from decided-for-you", async ({ page }) => {
+  const frame = await open(page);
+  await resultTab(frame).click();
+  await frame.locator(".uu-btn", { hasText: "대화로 보내기" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.structured.length)).toBe(1);
+
+  const report = await page.evaluate(() => window.__harness.structured[0]);
+  // `light` carries a default, so it was decided but not by the user this time.
+  expect(Object.keys(report.standIn)).toContain("light");
+  expect(report.untouched).toContain("coat");
+  expect(report.untouched).not.toContain("light");
+});
+
+test("the structure never carries the material", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-textarea").last().fill("예산 동결 결정");
+  await resultTab(frame).click();
+  await frame.locator(".uu-btn", { hasText: "대화로 보내기" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.structured.length)).toBe(1);
+
+  const report = await page.evaluate(() => JSON.stringify(window.__harness.structured[0]));
+  expect(report).not.toContain("예산 동결");
+});
+
+test("a correction button is named in the structure", async ({ page }) => {
+  const frame = await open(page);
+  await resultTab(frame).click();
+
+  const fix = frame.locator(".uu-fixes .uu-chip").first();
+  const label = await fix.innerText();
+  await fix.click();
+  await frame.locator(".uu-btn", { hasText: "대화로 보내기" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.structured.length)).toBe(1);
+
+  const report = await page.evaluate(() => window.__harness.structured[0]);
+  expect(report.fixApplied).toBe(label);
+});

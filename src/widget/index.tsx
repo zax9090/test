@@ -23,6 +23,7 @@ import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react-with
 
 import {
   assemble,
+  describeSelection,
   findConflicts,
   resolveAxes,
   type Selection,
@@ -130,6 +131,8 @@ function App() {
   const [loadedFrom, setLoadedFrom] = useState<{ id: string; name: string } | undefined>();
   const [presetBusy, setPresetBusy] = useState(false);
   const [presetReload, setPresetReload] = useState(0);
+  // Which correction button filled the current values, if one did.
+  const [fixApplied, setFixApplied] = useState<string | undefined>();
   // An axis the map asked for, held until its row actually exists in the DOM.
   const [pendingAxis, setPendingAxis] = useState<string | null>(null);
 
@@ -287,6 +290,7 @@ function App() {
       }
       return next;
     });
+    setFixApplied(fix.label);
   }, []);
 
   /**
@@ -404,6 +408,7 @@ function App() {
           // thing that changes between runs. The box stays empty on purpose.
           setSource("");
           setLoadedFrom(result.preset);
+          setFixApplied(undefined);
         }
       } catch {
         // No preset tools on this server, or the preset is gone. Nothing changes.
@@ -471,8 +476,29 @@ function App() {
   // than promising a composer prefill the protocol cannot give.
   // See docs/stage0-conflicts.md (C2).
   const handleSend = useCallback(() => {
-    void app?.sendMessage({ role: "user", content: [{ type: "text", text }] });
-  }, [app, text]);
+    if (!app || !payload) return;
+
+    void (async () => {
+      try {
+        // The structure goes alongside the prose, not instead of it. The visible
+        // message stays the prompt the user read and could have copied; this lets
+        // the model see which axis each sentence came from, tell "left to the AI"
+        // from "decided on their behalf", and notice a contradiction the user was
+        // warned about and kept. Sending ids *instead* would have left `[복사]`
+        // nothing to copy — docs/stage0-conflicts.md (C18).
+        await app.updateModelContext({
+          structuredContent: describeSelection(payload.unfolded, state, {
+            ...(fixApplied ? { fixApplied } : {}),
+          }) as unknown as Record<string, unknown>,
+        });
+      } catch {
+        // A host without `updateModelContext` still gets the prompt below, which
+        // is the part the user actually chose. Structure is an addition.
+      }
+
+      await app.sendMessage({ role: "user", content: [{ type: "text", text }] });
+    })();
+  }, [app, payload, state, text, fixApplied]);
 
   useEffect(() => {
     if (!copied) return;

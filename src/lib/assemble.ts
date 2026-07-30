@@ -435,6 +435,135 @@ export function assemble(unfolded: Unfolded, state: State): string {
   return blocks.filter(Boolean).join("\n\n");
 }
 
+/**
+ * One axis, as the model should see it.
+ *
+ * `kind` is the provenance, and it is the field that makes the report worth
+ * sending: `option` means the user took a value the model wrote, `typed` means
+ * they wrote their own. Reading the assembled prose, those are indistinguishable.
+ */
+export interface ReportedAxis {
+  kind: AxisState["kind"];
+  label: string;
+  /** Which section it was declared in, so the grouping survives the trip. */
+  section: string;
+  value: string | string[] | number;
+}
+
+/**
+ * The structure behind the prompt.
+ *
+ * Sent *alongside* the assembled text, never instead of it. The prose is what the
+ * user copies and what the brief calls the deliverable; this is what lets the
+ * model see which axis a sentence came from and check the combination. Replacing
+ * the prose with ids would have left `[복사]` nothing to copy — see
+ * docs/stage0-conflicts.md (C18).
+ *
+ * The three groups are the point. A flat list of chosen values cannot tell "left
+ * to the AI" from "a value was applied on their behalf", and those want different
+ * treatment: the first is genuinely open, the second is a decision the user may
+ * not have noticed making.
+ *
+ * The source material is not here, and there is no field for it.
+ */
+export interface SelectionReport {
+  intent: string;
+  goal?: string;
+  /** Axes the user decided themselves. */
+  chosen: Record<string, ReportedAxis>;
+  /** Decided by a `default` or a loaded preset, not by the user this time. */
+  standIn: Record<string, ReportedAxis>;
+  /** Ids the user never touched — left to the AI. */
+  untouched: string[];
+  /** Ids that stopped applying, so the model knows they were not skipped. */
+  inapplicable: string[];
+  symptoms?: string[];
+  freeform?: string;
+  /** Contradictions live at send time. The user was told and proceeded anyway. */
+  conflicts?: ConflictReport[];
+  /** The correction button that filled these values, when one did. */
+  fixApplied?: string;
+}
+
+function reportValue(state: AxisState): string | string[] | number | undefined {
+  switch (state.kind) {
+    case "option":
+      return state.optionValue;
+    case "options":
+      return state.optionValues;
+    case "typed":
+      return state.text;
+    case "number":
+      return state.value;
+    case "none":
+      return undefined;
+  }
+}
+
+/**
+ * Describe what was decided, in structure rather than prose.
+ *
+ * Pure, like everything else here, and built from the same `resolveAxes` output
+ * the rows and the text come from — so the three cannot disagree about what the
+ * user chose.
+ */
+export function describeSelection(
+  unfolded: Unfolded,
+  state: State,
+  extra: { fixApplied?: string } = {},
+): SelectionReport {
+  const resolved = resolveAxes(unfolded, state);
+
+  const report: SelectionReport = {
+    intent: unfolded.intent.trim(),
+    chosen: {},
+    standIn: {},
+    untouched: [],
+    inapplicable: [],
+  };
+
+  if (unfolded.goal) report.goal = unfolded.goal.selected;
+
+  for (const entry of resolved) {
+    const id = entry.axis.id;
+
+    if (!entry.applicable) {
+      report.inapplicable.push(id);
+      continue;
+    }
+
+    const value = reportValue(entry.state);
+    if (entry.status === "unset" || value === undefined) {
+      report.untouched.push(id);
+      continue;
+    }
+
+    const reported: ReportedAxis = {
+      kind: entry.state.kind,
+      label: entry.axis.label,
+      section: entry.sectionId,
+      value,
+    };
+    if (entry.status === "set") report.chosen[id] = reported;
+    else report.standIn[id] = reported;
+  }
+
+  const symptoms = state.symptoms?.filter((id) =>
+    (unfolded.symptoms ?? []).some((s) => s.id === id),
+  );
+  if (symptoms?.length) report.symptoms = symptoms;
+
+  const freeform = state.freeform?.trim();
+  if (freeform) report.freeform = freeform;
+
+  const conflicts = findConflicts(unfolded, resolved);
+  if (conflicts.length) report.conflicts = conflicts;
+
+  if (extra.fixApplied) report.fixApplied = extra.fixApplied;
+
+  return report;
+}
+
 /** Character count for the result tab. Length only — never a quality score (P5). */
 export function assembledLength(text: string): number {
   return [...text].length;
