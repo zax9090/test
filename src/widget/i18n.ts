@@ -68,6 +68,10 @@ export interface Strings {
   stMultiple: string;
   stNotApplicable: string;
   stConflict: string;
+  stDelegated: string;
+  delegate: string;
+  undelegate: string;
+  proceed: string;
 }
 
 const ko: Strings = {
@@ -128,6 +132,10 @@ const ko: Strings = {
   stMultiple: "여러 값 선택됨",
   stNotApplicable: "해당 없음",
   stConflict: "충돌",
+  stDelegated: "AI에 맡김",
+  delegate: "AI에 맡기기",
+  undelegate: "직접 정하기",
+  proceed: "이대로 진행",
 };
 
 const en: Strings = {
@@ -189,6 +197,10 @@ const en: Strings = {
   stMultiple: "Several chosen",
   stNotApplicable: "Not applicable",
   stConflict: "Conflict",
+  stDelegated: "Left to the AI",
+  delegate: "Leave to the AI",
+  undelegate: "Decide myself",
+  proceed: "Go with this",
 };
 
 export function strings(locale: Locale): Strings {

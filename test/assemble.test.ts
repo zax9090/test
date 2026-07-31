@@ -696,3 +696,45 @@ describe("describeSelection", () => {
     expect(text.split("\n").filter(Boolean)).toHaveLength(1 + Object.keys(r.chosen).length);
   });
 });
+
+// ── handing an axis to the AI on purpose ───────────────────────────────────
+
+describe("delegated", () => {
+  const delegated = { kind: "delegated" as const };
+
+  it("contributes nothing, like an axis nobody touched", () => {
+    expect(assemble(cat, state({ selections: { coat: delegated } }))).toBe(cat.intent);
+  });
+
+  it("overrides a model default — otherwise it would not be delegating", () => {
+    const withDefault = withAxis(cat, "coat", { default: "white" });
+    // Untouched, the default stands in.
+    expect(assemble(withDefault, state())).toContain("털색은 흰색");
+    // Handed over, nothing does.
+    expect(assemble(withDefault, state({ selections: { coat: delegated } }))).toBe(cat.intent);
+  });
+
+  it("overrides a value loaded from a preset too", () => {
+    const s = state({ loaded: { coat: "white" }, selections: { coat: delegated } });
+    expect(assemble(cat, s)).toBe(cat.intent);
+  });
+
+  it("resolves as undecided but keeps the state, so the screen can tell them apart", () => {
+    const resolved = resolveAxes(cat, state({ selections: { coat: delegated } }));
+    expect(resolved[0]!.status).toBe("unset");
+    expect(resolved[0]!.state.kind).toBe("delegated");
+    expect(resolved[0]!.line).toBe("");
+  });
+
+  it("is reported apart from untouched — one is a decision, the other is not", () => {
+    const r = describeSelection(cat, state({ selections: { coat: delegated } }));
+    expect(r.delegated).toEqual(["coat"]);
+    expect(r.untouched).not.toContain("coat");
+    expect(r.untouched).toContain("pose");
+  });
+
+  it("goes back to undecided when taken back", () => {
+    const resolved = resolveAxes(cat, state({ selections: { coat: { kind: "none" } } }));
+    expect(resolved[0]!.state.kind).toBe("none");
+  });
+});

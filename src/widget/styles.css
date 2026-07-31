@@ -1140,3 +1140,68 @@
     padding-left: 2px;
   }
 }
+
+/* ── leaving it to the AI ─────────────────────────────────────────────── */
+
+/*
+ * A quiet control, deliberately weaker than the values beside it. Handing an
+ * axis over is a legitimate decision, but it should not compete with actually
+ * making one — and it was previously expressible only by leaving the row empty,
+ * which cannot say whether the user considered it or skipped it.
+ */
+.uu-delegate {
+  appearance: none;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-full, 999px);
+  padding: 3px 8px;
+  margin-top: 3px;
+  font: inherit;
+  font-size: var(--font-text-xs-size, 11.5px);
+  color: var(--color-text-tertiary, inherit);
+  opacity: 0.6;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.uu-delegate:hover {
+  opacity: 1;
+}
+
+.uu-delegate:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+/* Once handed over it is a state, so it reads as one rather than as an offer. */
+.uu-delegate.is-on {
+  border-style: dashed;
+  border-color: currentColor;
+  opacity: 0.9;
+}
+
+.uu-badge[data-status="delegated"] {
+  border-style: dashed;
+  opacity: 0.8;
+}
+
+@media (max-width: 420px) {
+  /*
+   * The narrow row wraps, and the status mark already claims the first line at
+   * `order: -1`. Left in source order the delegate button landed between the
+   * values and the status, which pushed the status onto a line of its own and
+   * left every mark floating between rows.
+   *
+   * So it joins the status on that first line, both pushed right, and the label
+   * and values follow underneath. Putting it after the values instead left the
+   * status stranded again — that first line is the row's meta line, and the two
+   * controls that describe the row rather than set it belong together on it.
+   */
+  .uu-delegate {
+    order: -2;
+    margin-top: 0;
+    margin-left: auto;
+  }
+}

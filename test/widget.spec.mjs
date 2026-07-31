@@ -1456,3 +1456,60 @@ test("a correction button is named in the structure", async ({ page }) => {
   const report = await page.evaluate(() => window.__harness.structured[0]);
   expect(report.fixApplied).toBe(label);
 });
+
+// ── leaving an axis to the AI ──────────────────────────────────────────────
+
+test("an axis can be handed to the AI on purpose", async ({ page }) => {
+  const frame = await open(page);
+  const row = frame.locator('.uu-list .uu-row[data-axis="pose"]');
+
+  await row.locator(".uu-delegate").click();
+  await expect(row.locator(".uu-delegate")).toHaveAttribute("aria-pressed", "true");
+  await expect(row.locator(".uu-delegate")).toHaveText("직접 정하기");
+});
+
+test("delegating reads as its own state on the board, not as undecided", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator('.uu-list .uu-row[data-axis="pose"] .uu-delegate').click();
+  await boardTab(frame).click();
+
+  await expect(frame.locator('[data-axis-card="pose"] .uu-badge-text')).toHaveText("AI에 맡김");
+  // An axis nobody looked at still says undecided.
+  await expect(frame.locator('[data-axis-card="coat"] .uu-badge-text')).toHaveText("미정");
+});
+
+test("delegating clears a value that was standing in", async ({ page }) => {
+  const frame = await open(page);
+
+  // `light` carries a default, so it starts in the prompt.
+  await expect(prompt(frame)).toContainText("부드러운 조명을 쓴다.");
+
+  await frame.locator('.uu-list .uu-row[data-axis="light"] .uu-delegate').click();
+  // Handed over means handed over — the stand-in does not ride along.
+  await expect(prompt(frame)).not.toContainText("부드러운 조명을 쓴다.");
+});
+
+test("taking it back restores the stand-in", async ({ page }) => {
+  const frame = await open(page);
+  const delegate = frame.locator('.uu-list .uu-row[data-axis="light"] .uu-delegate');
+
+  await delegate.click();
+  await expect(prompt(frame)).not.toContainText("부드러운 조명");
+
+  await delegate.click();
+  await expect(prompt(frame)).toContainText("부드러운 조명을 쓴다.");
+});
+
+test("the structure sent to the model separates delegated from untouched", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator('.uu-list .uu-row[data-axis="pose"] .uu-delegate').click();
+
+  await resultTab(frame).click();
+  await frame.locator(".uu-btn", { hasText: "대화로 보내기" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.structured.length)).toBe(1);
+
+  const report = await page.evaluate(() => window.__harness.structured[0]);
+  expect(report.delegated).toContain("pose");
+  expect(report.untouched).not.toContain("pose");
+  expect(report.untouched).toContain("coat");
+});

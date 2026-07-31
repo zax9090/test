@@ -130,12 +130,25 @@ export interface AxisConflict {
  */
 export type AxisState =
   | { kind: "none" }
+  /**
+   * Handed to the AI on purpose.
+   *
+   * Distinct from `none`, which means the user has not looked yet. Both emit
+   * nothing, so the output cannot tell them apart — but they are entirely
+   * different things to a person, and one of them is a decision.
+   *
+   * Delegating outranks a `default` and a loaded preset value. Saying "you
+   * decide" while a stand-in quietly rides along in the prompt would not be
+   * delegating at all.
+   */
+  | { kind: "delegated" }
   | { kind: "option"; optionValue: string }
   | { kind: "options"; optionValues: string[] }
   | { kind: "typed"; text: string }
   | { kind: "number"; value: number };
 
 export const NO_STATE: AxisState = { kind: "none" };
+export const DELEGATED: AxisState = { kind: "delegated" };
 
 /** The one template a user-added axis emits through. Never stored, always this. */
 export const USER_AXIS_TEMPLATE = "{label}: {value}";

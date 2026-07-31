@@ -31,7 +31,8 @@ import { Icon, STATUS_ICON } from "./icons.js";
 /** Below this the panel takes the whole width instead of sitting beside the board. */
 export const PANEL_SIDE_BY_SIDE = 720;
 
-export type BoardStatus = "unset" | "default" | "chosen" | "multiple" | "n/a" | "conflict";
+export type BoardStatus =
+  "unset" | "delegated" | "default" | "chosen" | "multiple" | "n/a" | "conflict";
 
 interface BoardViewProps {
   sections: Section[];
@@ -56,6 +57,9 @@ interface BoardViewProps {
 export function boardStatus(entry: ResolvedAxis, clashing: boolean): BoardStatus {
   if (!entry.applicable) return "n/a";
   if (clashing) return "conflict";
+  // Handed over on purpose is a decision, and reads as one. Only an axis nobody
+  // has looked at is "undecided".
+  if (entry.state.kind === "delegated") return "delegated";
   if (entry.status === "unset") return "unset";
   if (entry.status === "partial") return "default";
   return entry.state.kind === "options" && entry.state.optionValues.length > 1
@@ -65,6 +69,7 @@ export function boardStatus(entry: ResolvedAxis, clashing: boolean): BoardStatus
 
 const STATUS_TEXT: Record<BoardStatus, (t: Strings) => string> = {
   unset: (t) => t.stUnset,
+  delegated: (t) => t.stDelegated,
   default: (t) => t.stDefault,
   chosen: (t) => t.stChosen,
   multiple: (t) => t.stMultiple,
@@ -75,6 +80,7 @@ const STATUS_TEXT: Record<BoardStatus, (t: Strings) => string> = {
 /** Reuses the row icons, so the board and the result tab speak one grammar. */
 const STATUS_MARK: Record<BoardStatus, string> = {
   unset: STATUS_ICON.unset,
+  delegated: STATUS_ICON.unset,
   default: STATUS_ICON.partial,
   chosen: STATUS_ICON.set,
   multiple: STATUS_ICON.set,
@@ -103,6 +109,7 @@ export function displayValue(entry: ResolvedAxis): string {
     case "number":
       return `${state.value}${axis.range?.unit ?? ""}`;
     case "none":
+    case "delegated":
       return "";
   }
 }

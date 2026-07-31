@@ -171,6 +171,7 @@ function renderRange(axis: Axis, value: number): string | undefined {
 function renderState(axis: Axis, state: AxisState): { line: string; values: string[] } | undefined {
   switch (state.kind) {
     case "none":
+    case "delegated":
       return undefined;
 
     case "option": {
@@ -226,6 +227,21 @@ export function resolveAxes(unfolded: Unfolded, state: State): ResolvedAxis[] {
   const resolved: ResolvedAxis[] = allAxes(unfolded).map((axis) => {
     const sectionId = sectionOf.get(axis.id) ?? "";
     const own = toState(axis, selections[axis.id]);
+
+    // Handed over on purpose. Nothing stands in — that is the whole difference
+    // between delegating and simply not having looked.
+    if (own.kind === "delegated") {
+      return {
+        axis,
+        sectionId,
+        status: "unset" as const,
+        applicable: true,
+        state: own,
+        line: "",
+        values: [],
+      };
+    }
+
     const chosen = renderState(axis, own);
     if (chosen) {
       return {
@@ -473,8 +489,10 @@ export interface SelectionReport {
   chosen: Record<string, ReportedAxis>;
   /** Decided by a `default` or a loaded preset, not by the user this time. */
   standIn: Record<string, ReportedAxis>;
-  /** Ids the user never touched — left to the AI. */
+  /** Ids the user never touched. Not the same as handing one over on purpose. */
   untouched: string[];
+  /** Ids the user explicitly handed to the AI. A decision, not an omission. */
+  delegated: string[];
   /** Ids that stopped applying, so the model knows they were not skipped. */
   inapplicable: string[];
   symptoms?: string[];
@@ -487,6 +505,8 @@ export interface SelectionReport {
 
 function reportValue(state: AxisState): string | string[] | number | undefined {
   switch (state.kind) {
+    case "delegated":
+      return undefined;
     case "option":
       return state.optionValue;
     case "options":
@@ -519,6 +539,7 @@ export function describeSelection(
     chosen: {},
     standIn: {},
     untouched: [],
+    delegated: [],
     inapplicable: [],
   };
 
@@ -529,6 +550,11 @@ export function describeSelection(
 
     if (!entry.applicable) {
       report.inapplicable.push(id);
+      continue;
+    }
+
+    if (entry.state.kind === "delegated") {
+      report.delegated.push(id);
       continue;
     }
 

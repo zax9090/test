@@ -280,6 +280,22 @@ export function AxisRow({
         {axis.norm ? <div className="uu-norm">{axis.norm}</div> : null}
       </div>
 
+      {/*
+        Handing an axis to the AI is a decision, so it needs a control of its own.
+        Leaving the row empty was the only way to express it before, and an empty
+        row cannot say whether it was considered or merely skipped.
+      */}
+      <button
+        type="button"
+        className={`uu-delegate${state.kind === "delegated" ? " is-on" : ""}`}
+        aria-pressed={state.kind === "delegated"}
+        onClick={() =>
+          onChange(axis.id, state.kind === "delegated" ? { kind: "none" } : { kind: "delegated" })
+        }
+      >
+        {state.kind === "delegated" ? t.undelegate : t.delegate}
+      </button>
+
       {/* Only a user-added axis can be deleted. A model axis is emptied instead,
           which needs no undo. */}
       {onRemove ? (
