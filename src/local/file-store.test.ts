@@ -43,10 +43,13 @@ const deps: StoreDeps = { now: () => 1_000, id: () => "fixed-id" };
 
 let dir: string;
 let path: string;
+/** A second path directly in the temp dir, for cases that need no subdirectory. */
+let flatPath: string;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "uu-presets-"));
   path = join(dir, "nested", "presets.json");
+  flatPath = join(dir, "flat.json");
 });
 
 afterEach(async () => {
@@ -91,13 +94,15 @@ describe("FilePresetStore", () => {
   });
 
   it("skips entries that are not presets, keeping the ones that are", async () => {
+    // Built with `join` rather than by rewriting separators in a string, so this
+    // behaves the same on Windows, where the separator is not "/".
     await writeFile(
-      path.replace("/nested/", "/"),
+      flatPath,
       JSON.stringify({ version: 1, presets: [null, 7, { id: "ok", name: "keep" }] }),
       "utf8",
-    ).catch(() => undefined);
+    );
 
-    const flat = new FilePresetStore(path.replace("/nested/", "/"), deps);
+    const flat = new FilePresetStore(flatPath, deps);
     expect((await flat.list()).map((p) => p.name)).toEqual(["keep"]);
   });
 

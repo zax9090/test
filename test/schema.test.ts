@@ -215,12 +215,28 @@ describe("parseUnfolded — type repair", () => {
     expect(allAxes(parseUnfolded(many, "고양이")!)[0]!.type).toBe("open");
   });
 
-  it("turns a retired `sample` axis into an open one", () => {
-    const raw = payload({ axes: [axis({ id: "voice", type: "sample", options: [] })] });
-    const parsed = allAxes(parseUnfolded(raw, "고양이")!)[0]!;
-    expect(parsed.type).toBe("open");
+  it("turns a retired `sample` axis into an open one, however many options it had", () => {
+    const bare = payload({ axes: [axis({ id: "voice", type: "sample", options: [] })] });
+    const parsedBare = allAxes(parseUnfolded(bare, "고양이")!)[0]!;
+    expect(parsedBare.type).toBe("open");
     // An open axis is answerable through its box, so no options is survivable.
-    expect(parsed.options).toBeUndefined();
+    expect(parsedBare.options).toBeUndefined();
+
+    // A `sample` axis was judged by reading its options, never by picking from a
+    // complete list — so a short one opens too, unlike a short `select`.
+    const withTwo = payload({
+      axes: [
+        axis({
+          id: "voice",
+          type: "sample",
+          options: [
+            { value: "plain", label: "담백", emit: "담백하게." },
+            { value: "warm", label: "부드럽게", emit: "부드럽게." },
+          ],
+        }),
+      ],
+    });
+    expect(allAxes(parseUnfolded(withTwo, "고양이")!)[0]!.type).toBe("open");
   });
 
   it("synthesises a template for an open axis that came without one", () => {

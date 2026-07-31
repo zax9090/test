@@ -12,6 +12,7 @@
  */
 
 import { MCP_ROUTE, SESSION_HEADER } from "./session.js";
+import { buildInfo } from "./build-server.js";
 import { landingResponse } from "./resources/landing.js";
 import type { Env } from "./env.js";
 
@@ -46,8 +47,11 @@ export default {
       return landingResponse(url.origin);
     }
 
+    // Read-only status, so a deployed Worker can be identified without guessing
+    // which commit is live. Name, version and commit only — nothing about the
+    // account, the bindings or the environment.
     if (url.pathname === "/health") {
-      return new Response("ok", { headers: { "content-type": "text/plain" } });
+      return Response.json(buildInfo());
     }
 
     if (url.pathname === MCP_ROUTE) {

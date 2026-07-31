@@ -308,10 +308,15 @@ function parseAxis(raw: unknown, index: number): Axis | undefined {
   } else if (rawType === "range") {
     // A range with no usable template is not a range. Fall back on what it carries.
     type = range ? "range" : "open";
-  } else if (rawType === "sample" || rawType === "select") {
-    // The two retired names. `select` meant "pick from this list", which is
-    // `closed` only if the list is genuinely complete — and it usually was not,
-    // which is the reason this rewrite happened. Opening is the safer default.
+  } else if (rawType === "sample") {
+    // A `sample` axis was one judged by reading the options rather than naming a
+    // value — voice, register, an opening line. That is never a complete list, so
+    // it opens regardless of how many options came with it.
+    type = "open";
+  } else if (rawType === "select") {
+    // `select` meant "pick from this list", which is `closed` only where the list
+    // is genuinely all of them. A long one never was, and that is the reason for
+    // this rewrite, so anything past a handful opens.
     type = options.length > 0 && options.length <= 5 ? "closed" : "open";
   } else {
     type = range ? "range" : "open";

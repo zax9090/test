@@ -19,7 +19,40 @@ import { registerPresets } from "./tools/presets.js";
 import { registerUnfold } from "./tools/unfold.js";
 import { registerWidgetResource } from "./resources/widget.js";
 
+/**
+ * The one place the build's identity is written down.
+ *
+ * `/health` and the `unfold` result both read from here, so a deployed Worker
+ * cannot report one version in its status and another in its tool results.
+ * `COMMIT` is filled by the build when the environment supplies it and is
+ * omitted otherwise — an absent commit is honest, a stale one is not.
+ *
+ * Nothing here is a secret: a name, a version and a short commit. No account id,
+ * no host names, no configuration.
+ */
 export const SERVER_INFO = { name: "unknown-unknowns", version: "0.1.0" } as const;
+
+/** Short commit sha, when the build had one. */
+export const COMMIT: string | undefined =
+  typeof BUILD_COMMIT === "string" && BUILD_COMMIT ? BUILD_COMMIT : undefined;
+
+declare const BUILD_COMMIT: string | undefined;
+
+export interface BuildInfo {
+  status: "ok";
+  name: string;
+  version: string;
+  commit?: string;
+}
+
+export function buildInfo(): BuildInfo {
+  return {
+    status: "ok",
+    name: SERVER_INFO.name,
+    version: SERVER_INFO.version,
+    ...(COMMIT ? { commit: COMMIT } : {}),
+  };
+}
 
 export const INSTRUCTIONS = `Surfaces the choices a request leaves unmade, so the user can
 decide them instead of discovering them one correction at a time.

@@ -27,6 +27,7 @@ import { SCHEMA, TASK, clampSource } from "../lib/prompt.js";
 import { extractViaSampling } from "../lib/sampling.js";
 import { fallbackUnfolded, parseUnfolded, type Unfolded } from "../lib/schema.js";
 import { detectLocale } from "../lib/locale.js";
+import { buildInfo, type BuildInfo } from "../build-server.js";
 import { WIDGET_URI } from "../resources/widget.js";
 
 /**
@@ -80,6 +81,14 @@ const baseInput = {
 
 export interface UnfoldPayload {
   unfolded: Unfolded;
+  /**
+   * Which build answered.
+   *
+   * Additive: every field that was here before is still here and unchanged, so a
+   * widget or client that does not know about this keeps working. It exists so a
+   * deployed Worker can be identified from its own output rather than guessed at.
+   */
+  server?: BuildInfo;
   locale: "ko" | "en";
   /**
    * The material the request was about, handed back so the widget can seed its
@@ -109,6 +118,7 @@ function payloadFor(
   return {
     unfolded,
     locale: detectLocale(request),
+    server: buildInfo(),
     ...(source ? { source } : {}),
   };
 }

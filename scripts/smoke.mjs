@@ -83,7 +83,11 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
   check("hands over the connector URL", html.includes(`${URL_.origin}/mcp`));
 
   const health = await fetch(`${URL_.origin}/health`);
-  check("health says ok", (await health.text()).trim() === "ok");
+  // Status is JSON now, so a deployed Worker can be identified from it. Version
+  // and name come from one place, checked here against the package.
+  const status = JSON.parse(await health.text());
+  check("health says ok", status.status === "ok");
+  check("health names the build", Boolean(status.name && status.version));
 
   // A browser opening the MCP endpoint gets the page, not a JSON-RPC error.
   const browsed = await fetch(URL_.href, { headers: { accept: "text/html,*/*;q=0.8" } });
@@ -135,6 +139,8 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
   check("drops the malformed axis", !axes.some((a) => a.id === "broken"));
   check("detects the locale", payload?.locale === "ko");
   check("carries no server-side handle", payload?.requestId === undefined);
+  check("names the build that answered", payload?.server?.status === "ok");
+  check("keeps the fields that were always there", Boolean(payload?.unfolded && payload?.locale));
 
   // A payload written the old way still renders — it becomes one unnamed section
   // rather than nothing at all.
@@ -241,17 +247,14 @@ const check = (label, ok) => console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`);
     arguments: { request: "회의록을 요약해줘", source: "예산 동결 결정.", unfolded: SAMPLE_AXES },
   });
   const axis = flatAxes(r.structuredContent.unfolded)[0];
-  check("sample axis survives", axis?.type === "sample");
+  check("the previewed axis is open", axis?.type === "open");
   check("its text arrives with the axes", axis.options[0].preview === "예산 동결.");
   check(
     "hands the source back for the widget's box",
     r.structuredContent.source === "예산 동결 결정.",
   );
   check("mints no request id — nothing is stored", r.structuredContent.requestId === undefined);
-  check(
-    "the extraction instruction asks for that text",
-    /give every option a/.test(tools[0].description),
-  );
+  check("the extraction instruction asks for that text", /\bpreview\b/.test(tools[0].description));
 
   await client.close();
 }
