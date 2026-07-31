@@ -54,6 +54,20 @@ export interface Strings {
   axisLabelPlaceholder: string;
   axisValuePlaceholder: string;
   sectionNamePlaceholder: string;
+  tabBoard: string;
+  board: string;
+  panelTitle: string;
+  close: string;
+  back: string;
+  unnamedSection: string;
+  decidedOf: (decided: number, total: number) => string;
+  derivedFrom: (axisId: string) => string;
+  stUnset: string;
+  stDefault: string;
+  stChosen: string;
+  stMultiple: string;
+  stNotApplicable: string;
+  stConflict: string;
 }
 
 const ko: Strings = {
@@ -100,6 +114,20 @@ const ko: Strings = {
   axisLabelPlaceholder: "항목 이름 (예: 털 길이)",
   axisValuePlaceholder: "이 항목을 어떻게 할지",
   sectionNamePlaceholder: "묶음 이름",
+  tabBoard: "구조",
+  board: "결정 상태 보드",
+  panelTitle: "자세히",
+  close: "닫기",
+  back: "뒤로",
+  unnamedSection: "묶음",
+  decidedOf: (decided, total) => `${total}개 중 ${decided}개 정함`,
+  derivedFrom: (axisId) => `${axisId}에 따라 정해집니다`,
+  stUnset: "미정",
+  stDefault: "기본값",
+  stChosen: "선택됨",
+  stMultiple: "여러 값 선택됨",
+  stNotApplicable: "해당 없음",
+  stConflict: "충돌",
 };
 
 const en: Strings = {
@@ -147,6 +175,20 @@ const en: Strings = {
   axisLabelPlaceholder: "Item name (e.g. coat length)",
   axisValuePlaceholder: "What to do about it",
   sectionNamePlaceholder: "Group name",
+  tabBoard: "Structure",
+  board: "Decision status board",
+  panelTitle: "Details",
+  close: "Close",
+  back: "Back",
+  unnamedSection: "Group",
+  decidedOf: (decided, total) => `${decided} of ${total} decided`,
+  derivedFrom: (axisId) => `Settled by ${axisId}`,
+  stUnset: "Undecided",
+  stDefault: "Default",
+  stChosen: "Chosen",
+  stMultiple: "Several chosen",
+  stNotApplicable: "Not applicable",
+  stConflict: "Conflict",
 };
 
 export function strings(locale: Locale): Strings {

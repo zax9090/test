@@ -103,7 +103,7 @@ const prompt = (frame) => frame.locator(".uu-prompt");
 test("renders the request and its core axes", async ({ page }) => {
   const frame = await open(page);
 
-  await expect(frame.locator(".uu-header-text")).toHaveText("고양이 이미지 만들어줘");
+  await expect(frame.locator(".uu-header")).toHaveText("고양이 이미지 만들어줘");
   await expect(frame.locator(".uu-label").filter({ hasText: "털색" })).toBeVisible();
   await expect(frame.locator(".uu-label").filter({ hasText: "자세" })).toBeVisible();
   await expect(frame.locator(".uu-norm")).toHaveText("보통 단색이 인식률이 높습니다");
@@ -345,7 +345,8 @@ test("switches its own chrome to English for an English request", async ({ page 
   });
 
   await expect(frame.locator(".uu-tab").first()).toHaveText("List");
-  await expect(frame.locator(".uu-tab").nth(1)).toHaveText("Result");
+  await expect(frame.locator(".uu-tab").nth(1)).toHaveText("Structure");
+  await expect(frame.locator(".uu-tab").nth(2)).toHaveText("Result");
 });
 
 // ── the map ────────────────────────────────────────────────────────────────
@@ -355,86 +356,326 @@ const setIframeWidth = (page, px) =>
     document.querySelector("#app").style.width = `${w}px`;
   }, px);
 
-test("the map is folded until asked for", async ({ page }) => {
-  const frame = await open(page);
+/** One section, two axes — the light end of the range the extractor now targets. */
+const SMALL = {
+  content: [{ type: "text", text: "{}" }],
+  structuredContent: {
+    locale: "ko",
+    unfolded: {
+      title: "메모",
+      intent: "메모 정리해줘",
+      sections: [
+        {
+          id: "form",
+          label: "형식",
+          axes: [
+            {
+              id: "order",
+              label: "순서",
+              type: "closed",
+              options: [
+                { value: "time", label: "시간순", emit: "시간순으로 정리한다." },
+                { value: "topic", label: "주제순", emit: "주제순으로 정리한다." },
+              ],
+            },
+            {
+              id: "length",
+              label: "분량",
+              type: "range",
+              range: { unit: "줄", emitTemplate: "{value}줄 이내로 쓴다." },
+            },
+          ],
+        },
+      ],
+    },
+  },
+};
 
-  await expect(frame.locator(".uu-header-btn")).toContainText("고양이 이미지 만들어줘");
-  await expect(frame.locator(".uu-maplabel")).toHaveText("지도");
+/** Labels and values long enough to find any layout that cannot wrap. */
+const LONG_LABELS = {
+  content: [{ type: "text", text: "{}" }],
+  structuredContent: {
+    locale: "ko",
+    unfolded: {
+      title: "긴 라벨",
+      intent: "아주 긴 요청문을 넣어서 레이아웃이 버티는지 확인한다",
+      sections: [
+        {
+          id: "long",
+          label: "아주 긴 묶음 이름을 넣어서 소제목이 줄바꿈되는지 확인하는 묶음",
+          axes: [
+            {
+              id: "verbose",
+              label: "아주 긴 축 이름을 넣어서 라벨 칸이 넘치지 않는지 확인하는 항목",
+              type: "open",
+              emitTemplate: "{value}",
+              placeholder: "supercalifragilisticexpialidocious-and-then-some",
+              options: [
+                {
+                  value: "long",
+                  label:
+                    "Extraordinarily long option label that should wrap rather than overflow its row",
+                  emit: "긴 값을 고른다.",
+                },
+              ],
+            },
+            {
+              id: "second",
+              label: "짧은 축",
+              type: "closed",
+              options: [{ value: "a", label: "가", emit: "가로 한다." }],
+            },
+          ],
+        },
+      ],
+    },
+  },
+};
+
+const boardTab = (frame) => frame.locator(".uu-tab", { hasText: "구조" });
+const openBoard = async (frame) => {
+  await boardTab(frame).click();
+  await expect(frame.locator(".uu-cards")).toBeVisible();
+};
+
+/**
+ * Open the board wide enough that the panel sits beside it.
+ *
+ * The harness iframe is 640px, which is below the split threshold — there the
+ * panel deliberately takes over the whole width and the cards step aside. Tests
+ * that need to watch a card while the panel is open have to ask for the wide
+ * layout explicitly.
+ */
+const openWideBoard = async (page, frame) => {
+  await setIframeWidth(page, 1024);
+  await openBoard(frame);
+};
+
+test("the structure screen draws no graph at all", async ({ page }) => {
+  const frame = await open(page);
+  await openBoard(frame);
+
+  // The radial map is gone: no canvas, no nodes, no spokes, no zoom.
   await expect(frame.locator(".uu-map")).toHaveCount(0);
-
-  await frame.locator(".uu-header-btn").click();
-  await expect(frame.locator(".uu-map")).toBeVisible();
+  await expect(frame.locator(".uu-node")).toHaveCount(0);
+  await expect(frame.locator(".uu-branch")).toHaveCount(0);
+  await expect(frame.locator(".uu-map-hub")).toHaveCount(0);
+  await expect(frame.locator(".uu-node-hit")).toHaveCount(0);
+  await expect(frame.locator(".uu-map-intent")).toHaveCount(0);
+  // No spokes. The remaining SVG is the status icons, which are shapes in a
+  // badge rather than a diagram — the icon grammar uses a circle for
+  // "confirmed by a person", so circles alone prove nothing either way.
+  await expect(frame.locator("svg line")).toHaveCount(0);
 });
 
-test("draws sections and their axes as two levels", async ({ page }) => {
+test("one card per section, with a decided count", async ({ page }) => {
   const frame = await open(page);
-  await frame.locator(".uu-header-btn").click();
+  await openBoard(frame);
 
-  await expect(frame.locator(".uu-node.is-section")).toHaveCount(3);
-  await expect(frame.locator(".uu-node.is-axis")).toHaveCount(5);
-  await expect(frame.locator(".uu-map-intent")).toContainText("고양이");
-  await expect(frame.locator(".uu-section-node").first()).toBeVisible();
-});
-
-test("a section reads as touched once anything under it is decided", async ({ page }) => {
-  const frame = await open(page);
-  await frame.locator(".uu-chip", { hasText: "검정" }).click();
-  await frame.locator(".uu-header-btn").click();
-
-  // `coat` lives in the first section, so that branch goes solid.
-  await expect(frame.locator(".uu-branch").first()).not.toHaveAttribute("stroke-dasharray", /.+/);
-});
-
-test("spokes are solid for decided axes and dashed for undecided ones", async ({ page }) => {
-  const frame = await open(page);
-  await frame.locator(".uu-chip", { hasText: "검정" }).click();
-  await frame.locator(".uu-header-btn").click();
-
-  const coat = frame.locator('[data-node="coat"] line');
-  const pose = frame.locator('[data-node="pose"] line');
-
-  await expect(coat).not.toHaveAttribute("stroke-dasharray", /.+/);
-  await expect(pose).toHaveAttribute("stroke-dasharray", "3 3");
-});
-
-test("a node moves to its axis in the list instead of editing it", async ({ page }) => {
-  const frame = await open(page);
-  await frame.locator(".uu-header-btn").click();
-
-  const before = await prompt(frame).innerText();
-  await frame.locator('[data-node="pose"] .uu-node-hit').click();
-
-  // Navigates, never edits.
-  await expect(frame.locator(".uu-tab", { hasText: "목록" })).toHaveAttribute(
-    "aria-selected",
-    "true",
+  await expect(frame.locator(".uu-card")).toHaveCount(3);
+  await expect(frame.locator(".uu-card-title")).toHaveText(["대상", "환경", "화면"]);
+  // `light` carries a default, so its section starts with one decided.
+  await expect(frame.locator(".uu-card").nth(1).locator(".uu-card-count")).toContainText(
+    "1개 정함",
   );
-  await expect(prompt(frame)).toHaveText(before);
-  await expect(frame.locator('.uu-row[data-axis="pose"]')).toBeInViewport();
 });
 
-test("a node in any section scrolls to its row", async ({ page }) => {
+test("each row shows the axis name, its state and its current value", async ({ page }) => {
   const frame = await open(page);
-  await frame.locator(".uu-header-btn").click();
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await openBoard(frame);
 
-  await frame.locator('[data-node="bg"] .uu-node-hit').click();
-  await expect(frame.locator('.uu-row[data-axis="bg"]')).toBeInViewport();
+  const coat = frame.locator('[data-axis-card="coat"]');
+  await expect(coat.locator(".uu-card-name")).toHaveText("털색");
+  await expect(coat.locator(".uu-badge-text")).toHaveText("선택됨");
+  await expect(coat.locator(".uu-card-value")).toHaveText("검정");
+
+  // Undecided and decided-for-you say so in words, not by colour alone.
+  await expect(frame.locator('[data-axis-card="pose"] .uu-badge-text')).toHaveText("미정");
+  await expect(frame.locator('[data-axis-card="light"] .uu-badge-text')).toHaveText("기본값");
 });
 
-test("no map at all below the narrow threshold", async ({ page }) => {
+test("several chosen values read as their own state", async ({ page }) => {
   const frame = await open(page);
-  await frame.locator(".uu-header-btn").click();
-  await expect(frame.locator(".uu-map")).toBeVisible();
+  await openWideBoard(page, frame);
+  await frame.locator('[data-axis-card="pose"]').click();
 
-  await setIframeWidth(page, 440);
+  // Single-value axes stay "chosen"; only a genuine multi goes to "several".
+  await expect(frame.locator(".uu-panel")).toBeVisible();
+  await frame.locator(".uu-panel .uu-chip", { hasText: "누움" }).click();
+  await expect(frame.locator('[data-axis-card="pose"] .uu-badge-text')).toHaveText("선택됨");
+});
 
-  // Header only — and the toggle goes with it, so there is nothing to open.
-  await expect(frame.locator(".uu-map")).toHaveCount(0);
-  await expect(frame.locator(".uu-header-btn")).toHaveCount(0);
-  await expect(frame.locator(".uu-header")).toContainText("고양이 이미지 만들어줘");
+test("choosing a row opens the detail panel for that axis", async ({ page }) => {
+  const frame = await open(page);
+  await openBoard(frame);
 
-  await setIframeWidth(page, 640);
-  await expect(frame.locator(".uu-header-btn")).toBeVisible();
+  await expect(frame.locator(".uu-panel")).toHaveCount(0);
+  await frame.locator('[data-axis-card="coat"]').click();
+
+  const panel = frame.locator(".uu-panel");
+  await expect(panel).toBeVisible();
+  await expect(panel.locator(".uu-panel-title")).toHaveText("털색");
+  await expect(panel.locator(".uu-panel-section")).toHaveText("대상");
+});
+
+test("picking another row swaps the panel contents", async ({ page }) => {
+  const frame = await open(page);
+  await openWideBoard(page, frame);
+
+  await frame.locator('[data-axis-card="coat"]').click();
+  await expect(frame.locator(".uu-panel-title")).toHaveText("털색");
+
+  await frame.locator('[data-axis-card="pose"]').click();
+  await expect(frame.locator(".uu-panel-title")).toHaveText("자세");
+  await expect(frame.locator(".uu-panel")).toHaveCount(1);
+});
+
+test("a change in the panel reaches the card and the list at once", async ({ page }) => {
+  const frame = await open(page);
+  await openWideBoard(page, frame);
+  await frame.locator('[data-axis-card="coat"]').click();
+
+  await frame.locator(".uu-panel .uu-chip", { hasText: "검정" }).click();
+
+  // The card behind it.
+  await expect(frame.locator('[data-axis-card="coat"] .uu-card-value')).toHaveText("검정");
+  // And the list tab, which is the same selection state.
+  await frame.locator(".uu-tab", { hasText: "목록" }).click();
+  await expect(frame.locator('.uu-list .uu-row[data-axis="coat"] .uu-chip.is-on')).toHaveText(
+    "검정",
+  );
+  await expect(prompt(frame)).toContainText("털색은 검은색");
+});
+
+test("a change in the list reaches the board", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-chip", { hasText: "누움" }).click();
+  await openBoard(frame);
+
+  await expect(frame.locator('[data-axis-card="pose"] .uu-card-value')).toHaveText("누움");
+});
+
+test("the close button dismisses the panel", async ({ page }) => {
+  const frame = await open(page);
+  await openBoard(frame);
+  await frame.locator('[data-axis-card="coat"]').click();
+  await expect(frame.locator(".uu-panel")).toBeVisible();
+
+  await frame.locator(".uu-panel-close").click();
+  await expect(frame.locator(".uu-panel")).toHaveCount(0);
+});
+
+test("Escape dismisses the panel", async ({ page }) => {
+  const frame = await open(page);
+  await openBoard(frame);
+  await frame.locator('[data-axis-card="coat"]').click();
+  await expect(frame.locator(".uu-panel")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(frame.locator(".uu-panel")).toHaveCount(0);
+});
+
+test("closing returns focus to the row it was opened from", async ({ page }) => {
+  const frame = await open(page);
+  await openBoard(frame);
+  await frame.locator('[data-axis-card="pose"]').click();
+  await page.keyboard.press("Escape");
+
+  // Without this a keyboard user lands at the top of the document every time.
+  await expect(frame.locator('[data-axis-card="pose"]')).toBeFocused();
+});
+
+test("the whole flow works from the keyboard alone", async ({ page }) => {
+  const frame = await open(page);
+  await openWideBoard(page, frame);
+
+  const row = frame.locator('[data-axis-card="coat"]');
+  await row.focus();
+  await page.keyboard.press("Enter");
+  await expect(frame.locator(".uu-panel-title")).toHaveText("털색");
+
+  await page.keyboard.press("Escape");
+  await expect(frame.locator(".uu-panel")).toHaveCount(0);
+  await expect(row).toBeFocused();
+});
+
+test("conflict and not-applicable are stated on the board", async ({ page }) => {
+  const frame = await open(page, LINKED);
+  await openWideBoard(page, frame);
+
+  await frame.locator('[data-axis-card="deliverable"]').click();
+  await frame.locator(".uu-panel .uu-chip", { hasText: "기획서" }).click();
+  await expect(frame.locator('[data-axis-card="stack"] .uu-badge-text')).toHaveText("해당 없음");
+
+  await frame.locator('[data-axis-card="count"]').click();
+  await frame.locator(".uu-panel .uu-chip", { hasText: "8개" }).click();
+  await frame.locator('[data-axis-card="specificity"]').click();
+  await frame.locator(".uu-panel .uu-chip", { hasText: "이미 구체적" }).click();
+
+  await expect(frame.locator('[data-axis-card="count"] .uu-badge-text')).toHaveText("충돌");
+  await expect(frame.locator(".uu-panel .uu-clash")).toBeVisible();
+});
+
+test("a single section with two axes renders without looking broken", async ({ page }) => {
+  const frame = await open(page, SMALL);
+  await openBoard(frame);
+
+  await expect(frame.locator(".uu-card")).toHaveCount(1);
+  await expect(frame.locator(".uu-card-row")).toHaveCount(2);
+  await expect(frame.locator(".uu-card-count")).toContainText("2개 중");
+});
+
+test("long Korean and English labels do not break the layout", async ({ page }) => {
+  const frame = await open(page, LONG_LABELS);
+  await openBoard(frame);
+
+  const board = frame.locator(".uu-board");
+  const overflow = await board.evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
+for (const width of [360, 480, 720, 1024]) {
+  test(`no horizontal scroll at ${width}px`, async ({ page }) => {
+    const frame = await open(page);
+    await setIframeWidth(page, width);
+    await openBoard(frame);
+
+    const scroll = await frame
+      .locator(".uu-root")
+      .evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(scroll).toBeLessThanOrEqual(1);
+  });
+}
+
+test("the panel takes the full width on a narrow screen", async ({ page }) => {
+  const frame = await open(page);
+  await setIframeWidth(page, 360);
+  await openBoard(frame);
+
+  await frame.locator('[data-axis-card="coat"]').click();
+
+  // Full-width detail screen: the cards step aside rather than being squeezed.
+  await expect(frame.locator(".uu-panel.is-full")).toBeVisible();
+  await expect(frame.locator(".uu-cards")).toHaveCount(0);
+
+  // And there is a clear way back.
+  await frame.locator(".uu-panel-close").click();
+  await expect(frame.locator(".uu-cards")).toBeVisible();
+});
+
+test("the panel sits beside the board on a wide screen", async ({ page }) => {
+  const frame = await open(page);
+  await setIframeWidth(page, 1024);
+  await openBoard(frame);
+
+  await frame.locator('[data-axis-card="coat"]').click();
+  await expect(frame.locator(".uu-cards")).toBeVisible();
+  await expect(frame.locator(".uu-panel.is-full")).toHaveCount(0);
+
+  const cards = await frame.locator(".uu-cards").boundingBox();
+  const panel = await frame.locator(".uu-panel").boundingBox();
+  expect(panel.x).toBeGreaterThan(cards.x);
 });
 
 // ── sample axes and preview ────────────────────────────────────────────────

@@ -9,15 +9,7 @@
  * light or dark theme without shipping a palette of its own.
  */
 
-import {
-  StrictMode,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useApp, useHostStyles } from "@modelcontextprotocol/ext-apps/react-with-deps";
 
@@ -35,22 +27,22 @@ import { strings } from "./i18n.js";
 import { AxisList } from "./AxisList.js";
 import { GoalField } from "./GoalField.js";
 import { PresetBar, PresetSave, usePresets } from "./PresetBar.js";
-import { MapView } from "./MapView.js";
+import { BoardView } from "./BoardView.js";
 import { Result } from "./Result.js";
 import { useWidth } from "./useWidth.js";
 import { useSupersession } from "./useSupersession.js";
-import { Icon } from "./icons.js";
 
 /** Shared by every instance of this widget, across all of a conversation's turns. */
 const CHANNEL = "unknown-unknowns";
 
 /**
- * Below this the map is not drawn at all — the header stands alone.
+ * The three surfaces, all sharing one selection state.
  *
- * A radial diagram squeezed into a phone-width column is unreadable, and a
- * cramped one is worse than none.
+ * `board` replaced a radial map that had to be hidden below 520px — most of a
+ * chat column — and answered relationship questions nobody was asking. The board
+ * answers the status question instead and works at every width.
  */
-const MAP_MIN_WIDTH = 520;
+type Tab = "list" | "board" | "result";
 
 interface Payload {
   unfolded: Unfolded;
@@ -119,10 +111,11 @@ function App() {
   const [chosenSymptoms, setChosenSymptoms] = useState<string[]>([]);
   const [freeform, setFreeform] = useState("");
   const [source, setSource] = useState("");
-  const [tab, setTab] = useState<"list" | "result">("list");
+  const [tab, setTab] = useState<Tab>("list");
   const [copied, setCopied] = useState(false);
-  // Folded by default; the header is what shows until it is opened.
-  const [mapOpen, setMapOpen] = useState(false);
+  // Axis open in the board's detail panel. Held here, not in the board, so
+  // returning to the tab keeps the panel where it was.
+  const [selectedAxis, setSelectedAxis] = useState<string | null>(null);
   const [refolding, setRefolding] = useState(false);
   const [switchingGoal, setSwitchingGoal] = useState(false);
   // Values a preset supplied. Held apart from `selections` so they can read as
@@ -133,8 +126,6 @@ function App() {
   const [presetReload, setPresetReload] = useState(0);
   // Which correction button filled the current values, if one did.
   const [fixApplied, setFixApplied] = useState<string | undefined>();
-  // An axis the map asked for, held until its row actually exists in the DOM.
-  const [pendingAxis, setPendingAxis] = useState<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const width = useWidth(rootRef);
@@ -506,61 +497,11 @@ function App() {
     return () => clearTimeout(timer);
   }, [copied]);
 
-  /**
-   * Follow a map node to its axis.
-   *
-   * The map navigates, it does not edit — so this lands on the row in the list
-   * tab, opening the extras fold first if the axis is hiding inside it.
-   *
-   * The scroll is deferred to a layout effect rather than a frame callback: the
-   * row may not exist yet when this runs, and a single `requestAnimationFrame`
-   * can land before React has committed the newly unfolded rows. Holding the
-   * target in state means the effect simply runs again on the render that
-   * finally produces it.
-   */
-  const gotoAxis = useCallback((axisId: string) => {
-    setTab("list");
-    setPendingAxis(axisId);
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!pendingAxis) return;
-    const row = rootRef.current?.querySelector(`[data-axis="${CSS.escape(pendingAxis)}"]`);
-    if (!row) return; // Not rendered yet — try again when it is.
-    row.scrollIntoView({ block: "center", behavior: "smooth" });
-    setPendingAxis(null);
-  }, [pendingAxis, tab, resolved]);
-
   if (!payload) return <div className="uu-root" ref={rootRef} />;
-
-  const showMap = width >= MAP_MIN_WIDTH;
 
   return (
     <div className="uu-root" ref={rootRef}>
-      {showMap ? (
-        <button
-          type="button"
-          className="uu-header uu-header-btn"
-          onClick={() => setMapOpen((v) => !v)}
-          aria-expanded={mapOpen}
-        >
-          <Icon name={mapOpen ? "i-less" : "i-more"} />
-          <span className="uu-header-text">{payload.unfolded.intent}</span>
-          <span className="uu-maplabel">{t.map}</span>
-        </button>
-      ) : (
-        <div className="uu-header">{payload.unfolded.intent}</div>
-      )}
-
-      {showMap && mapOpen ? (
-        <MapView
-          sections={payload.unfolded.sections}
-          resolved={resolved}
-          intent={payload.unfolded.intent}
-          onPick={gotoAxis}
-          width={width}
-        />
-      ) : null}
+      <div className="uu-header">{payload.unfolded.intent}</div>
 
       <div className="uu-tabs" role="tablist">
         <button
@@ -571,6 +512,15 @@ function App() {
           onClick={() => setTab("list")}
         >
           {t.tabList}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "board"}
+          className={`uu-tab${tab === "board" ? " is-on" : ""}`}
+          onClick={() => setTab("board")}
+        >
+          {t.tabBoard}
         </button>
         <button
           type="button"
@@ -631,6 +581,22 @@ function App() {
             ? { onRefold: runRefold }
             : {})}
           refolding={refolding}
+          t={t}
+        />
+      </div>
+
+      {/* Same `resolved` and the same `setAxis` the list uses, so a change on one
+          surface is on the other before the next frame. */}
+      <div hidden={tab !== "board"}>
+        <BoardView
+          sections={payload.unfolded.sections}
+          resolved={resolved}
+          conflicts={conflicts}
+          selectedAxis={selectedAxis}
+          onSelectAxis={setSelectedAxis}
+          onChange={setAxis}
+          onRemoveAxis={removeAxis}
+          width={width}
           t={t}
         />
       </div>

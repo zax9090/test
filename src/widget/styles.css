@@ -56,90 +56,313 @@
   white-space: nowrap;
 }
 
-.uu-maplabel {
-  flex: 0 0 auto;
-  font-weight: var(--font-weight-normal, 400);
-  color: var(--color-text-tertiary, inherit);
-  opacity: 0.6;
-  font-size: var(--font-text-xs-size, 11.5px);
-}
-
-/* ── map ──────────────────────────────────────────────────────────────── */
+/* ── structure board ──────────────────────────────────────────────────── */
 
 /*
- * A read-out, not a control surface. Nodes navigate to an axis; they never
- * change one. Solid spoke means decided, dashed means not — the same grammar
- * the icons use.
+ * A decision status board, not a diagram. Everything here is aimed at reading
+ * state quickly at chat-column width: one card per section, restrained borders,
+ * generous space between cards, and no shadow, gradient or motion.
+ *
+ * Every colour is a host variable with a neutral fallback, same as the rest of
+ * the widget, so light and dark both work without a palette of our own.
  */
-.uu-map {
+.uu-board {
   display: block;
-  margin-bottom: 4px;
-  color: var(--color-text-primary, inherit);
-  overflow: visible;
 }
 
-.uu-map line {
-  stroke: currentColor;
-  stroke-width: 1;
-  opacity: 0.32;
+/* Two columns only where both halves stay usable. Below that the panel takes
+   over the width entirely — see `PANEL_SIDE_BY_SIDE`. */
+.uu-board.is-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 16px;
+  align-items: start;
 }
 
-.uu-map rect {
-  stroke: currentColor;
-  stroke-width: 1.5;
-  opacity: 0.55;
+.uu-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
 }
 
-.uu-node {
+.uu-card {
+  border: 1px solid var(--color-border-primary, rgba(128, 128, 128, 0.28));
+  border-radius: var(--radius-md, 10px);
+  padding: 10px 12px 6px;
+  min-width: 0;
+}
+
+.uu-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.uu-card-title {
+  font-size: var(--font-text-sm-size, 13px);
+  font-weight: var(--font-weight-semibold, 600);
+  letter-spacing: 0.02em;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* On the board a count is the point. The list tab still has none — there it
+   would read as a quota while the user is still deciding. */
+.uu-card-count {
+  flex: 0 0 auto;
+  font-size: var(--font-text-xs-size, 11.5px);
+  color: var(--color-text-tertiary, inherit);
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.uu-card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.uu-card-item + .uu-card-item {
+  border-top: 1px solid var(--color-border-primary, rgba(128, 128, 128, 0.16));
+}
+
+/*
+ * The whole row is the control, so the touch target is the full width and at
+ * least 44px tall — a status row that needs a precise tap is not usable on a
+ * phone.
+ */
+.uu-card-row {
+  appearance: none;
+  background: none;
+  border: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 4px;
+  font: inherit;
+  color: inherit;
   cursor: pointer;
+  text-align: left;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: baseline;
 }
 
-/* `transparent`, not `none` — a fill of `none` is not hit-testable. */
-.uu-node-hit {
-  fill: transparent;
-  stroke: none;
+.uu-card-row:hover {
+  background: color-mix(in srgb, currentColor 5%, transparent);
 }
 
-.uu-node.is-set line,
-.uu-node.is-set rect {
-  opacity: 1;
+.uu-card-row:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+  border-radius: var(--radius-sm, 6px);
 }
 
-.uu-node:hover line,
-.uu-node:hover rect {
-  opacity: 1;
+/* The open axis is marked by weight and a bar, not by colour alone. */
+.uu-card-row.is-selected {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  box-shadow: inset 2px 0 0 currentColor;
+  border-radius: var(--radius-sm, 6px);
 }
 
-.uu-node text {
-  fill: currentColor;
+.uu-card-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: var(--font-weight-medium, 500);
+}
+
+/*
+ * Two lines, then clamp. The panel behind the row carries the value in full, so
+ * nothing important ends up permanently behind an ellipsis.
+ */
+.uu-card-value {
+  grid-column: 1 / -1;
   font-size: var(--font-text-xs-size, 11.5px);
+  color: var(--color-text-secondary, inherit);
+  opacity: 0.9;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── status badges ────────────────────────────────────────────────────── */
+
+/*
+ * Icon plus words, never colour alone. The icon repeats the row grammar used
+ * everywhere else (solid = decided, dotted = not) and the text says the state
+ * outright, so nothing depends on telling two hues apart.
+ */
+.uu-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-text-xs-size, 11.5px);
+  padding: 1px 7px 1px 5px;
+  border: 1px solid var(--color-border-primary, rgba(128, 128, 128, 0.32));
+  border-radius: var(--border-radius-full, 999px);
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.uu-badge[data-status="chosen"],
+.uu-badge[data-status="multiple"] {
+  border-color: currentColor;
+  opacity: 1;
+}
+
+.uu-badge[data-status="unset"] {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+.uu-badge[data-status="default"] {
+  border-style: dashed;
+}
+
+.uu-badge[data-status="n/a"] {
   opacity: 0.55;
-  pointer-events: none;
 }
 
-.uu-node.is-set text {
-  opacity: 1;
+.uu-card-row[data-status="n/a"] .uu-card-name {
+  text-decoration: line-through;
+  opacity: 0.65;
 }
 
-/* Outer ring reads as secondary: smaller label to match the smaller node. */
-.uu-node.is-extra text {
-  font-size: 10.5px;
+/* ── detail panel ─────────────────────────────────────────────────────── */
+
+.uu-panel {
+  border: 1px solid var(--color-border-primary, rgba(128, 128, 128, 0.28));
+  border-radius: var(--radius-md, 10px);
+  padding: 12px;
+  min-width: 0;
 }
 
-.uu-node:focus-visible {
-  outline: 1px solid currentColor;
+.uu-panel:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
 }
 
-.uu-map-hub {
-  fill: var(--color-background-primary, canvas);
-  stroke: var(--color-border-primary, rgba(128, 128, 128, 0.32));
-  stroke-width: 1;
+/* Narrow: the panel is the screen. The board is unmounted rather than squeezed,
+   because two columns in a phone-width chat leaves neither one usable. */
+.uu-panel.is-full {
+  border: 0;
+  padding: 0;
 }
 
-.uu-map-intent {
-  fill: currentColor;
+.uu-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.uu-panel-where {
+  min-width: 0;
+}
+
+.uu-panel-section {
+  display: block;
   font-size: var(--font-text-xs-size, 11.5px);
-  pointer-events: none;
+  color: var(--color-text-tertiary, inherit);
+  opacity: 0.75;
+  overflow-wrap: anywhere;
+}
+
+.uu-panel-title {
+  font-size: var(--font-text-sm-size, 13px);
+  font-weight: var(--font-weight-semibold, 600);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A comfortable target on touch, where this is the way back. */
+.uu-panel-close {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.uu-panel-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.uu-panel-norm {
+  font-size: var(--font-text-xs-size, 11.5px);
+  color: var(--color-text-secondary, inherit);
+  opacity: 0.85;
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+
+/* The real `AxisRow` lives here. Its label column would waste the panel's width,
+   so the row stacks instead — same component, same behaviour. */
+.uu-panel-edit .uu-row {
+  flex-wrap: wrap;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/*
+ * The row's own label is dropped: the panel heading directly above it already
+ * names the axis, and printing it twice makes the panel read as two things. The
+ * heading labels the dialog for assistive tech, so nothing is lost.
+ */
+.uu-panel-edit .uu-label {
+  display: none;
+}
+
+/* The status column repeats the badge at the top of the panel. */
+.uu-panel-edit .uu-status {
+  display: none;
+}
+
+.uu-effects {
+  margin: 10px 0 0;
+  font-size: var(--font-text-xs-size, 11.5px);
+}
+
+.uu-effect {
+  display: flex;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.uu-effect dt {
+  flex: 0 0 auto;
+  font-weight: var(--font-weight-medium, 500);
+  opacity: 0.8;
+}
+
+.uu-effect dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--color-text-secondary, inherit);
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+/* Nothing here animates, but the widget should still say so for anything the
+   host's own styles might introduce. */
+@media (prefers-reduced-motion: reduce) {
+  .uu-board *,
+  .uu-board *::before,
+  .uu-board *::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 /* ── tabs ─────────────────────────────────────────────────────────────── */
@@ -568,83 +791,6 @@
   border-radius: 50%;
   background: currentColor;
   opacity: 0.55;
-}
-
-/* ── sample cards ─────────────────────────────────────────────────────── */
-
-/*
- * Directions you have to read rather than name. Cards keep their place while a
- * rewrite is in flight — no skeleton, no spinner, nothing blanks.
- */
-.uu-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 6px;
-}
-
-.uu-card {
-  appearance: none;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 8px 10px;
-  background: transparent;
-  border: 1px solid var(--color-border-primary, rgba(128, 128, 128, 0.32));
-  border-radius: var(--border-radius-sm, 6px);
-}
-
-.uu-card:hover {
-  background: var(--color-background-secondary, rgba(128, 128, 128, 0.07));
-}
-
-.uu-card.is-on {
-  border-color: currentColor;
-  background: color-mix(in srgb, currentColor 10%, transparent);
-}
-
-.uu-card-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-weight: var(--font-weight-medium, 500);
-}
-
-.uu-card-body {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: var(--font-text-xs-size, 11.5px);
-  line-height: 1.5;
-  color: var(--color-text-secondary, inherit);
-  opacity: 0.85;
-}
-
-.uu-refresh {
-  appearance: none;
-  background: none;
-  border: 0;
-  font: inherit;
-  font-size: var(--font-text-xs-size, 11.5px);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 6px;
-  padding: 2px;
-  color: var(--color-text-secondary, inherit);
-  opacity: 0.7;
-}
-
-.uu-refresh:hover:not(:disabled) {
-  opacity: 1;
-}
-
-.uu-refresh:disabled {
-  cursor: default;
-  opacity: 0.45;
 }
 
 /* ── inputs ───────────────────────────────────────────────────────────── */
