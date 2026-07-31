@@ -109,18 +109,20 @@ test("renders the request and its core axes", async ({ page }) => {
   await expect(frame.locator(".uu-norm")).toHaveText("보통 단색이 인식률이 높습니다");
 });
 
-test("groups axes into named sections, all of them open", async ({ page }) => {
+test("groups axes into named sections, and no section is itself a fold", async ({ page }) => {
   const frame = await open(page);
 
-  await expect(frame.locator(".uu-section-label")).toHaveText(["대상", "환경", "화면"]);
+  // Sections never collapse as groups — that was the point of replacing
+  // core/extra with them. The list does open with the first few decisions and
+  // fold the rest, which is one fold for the whole list, not one per section.
+  await expect(frame.locator(".uu-more")).toHaveCount(1);
+  await expect(frame.locator(".uu-section-label .uu-fold")).toHaveCount(0);
 
-  // Nothing is folded away — every axis is reachable without opening anything.
+  await frame.locator(".uu-more").click();
+  await expect(frame.locator(".uu-section-label")).toHaveText(["대상", "환경", "화면"]);
   for (const label of ["털색", "자세", "조명", "배경", "가로"]) {
-    await expect(frame.locator(".uu-label").filter({ hasText: label })).toBeVisible();
+    await expect(frame.locator(".uu-list .uu-label").filter({ hasText: label })).toBeVisible();
   }
-  // The list has no folds left. (The result tab keeps one, for the
-  // decided-for-you group — that is a different thing in a different place.)
-  await expect(frame.locator(".uu-list .uu-fold")).toHaveCount(0);
 });
 
 test("says nothing beside a section heading — no count, no progress", async ({ page }) => {
@@ -269,6 +271,8 @@ test("a delegated line opens its chips in place, not in the list tab", async ({ 
 
 test("a range accepts a value outside its stated bounds", async ({ page }) => {
   const frame = await open(page);
+  // `width` is the fifth axis, so it starts folded away.
+  await frame.locator(".uu-more").click();
 
   const input = frame.locator(".uu-input-num");
   await input.fill("99999");
@@ -1342,6 +1346,8 @@ test("a hidden axis contributes nothing to the prompt", async ({ page }) => {
 
 test("a contradiction is named where the choice was made", async ({ page }) => {
   const frame = await open(page, LINKED);
+  // `specificity` is the fourth axis, so it starts folded away.
+  await frame.locator(".uu-more").click();
 
   await expect(frame.locator(".uu-clash")).toHaveCount(0);
 
@@ -1355,6 +1361,8 @@ test("a contradiction is named where the choice was made", async ({ page }) => {
 
 test("both rows in a contradiction are marked, not just one", async ({ page }) => {
   const frame = await open(page, LINKED);
+  // `specificity` is the fourth axis, so it starts folded away.
+  await frame.locator(".uu-more").click();
   await frame.locator(".uu-chip", { hasText: "8개" }).click();
   await frame.locator(".uu-chip", { hasText: "이미 구체적" }).click();
 
@@ -1364,6 +1372,8 @@ test("both rows in a contradiction are marked, not just one", async ({ page }) =
 
 test("a contradiction informs but never blocks", async ({ page }) => {
   const frame = await open(page, LINKED);
+  // `specificity` is the fourth axis, so it starts folded away.
+  await frame.locator(".uu-more").click();
   await frame.locator(".uu-chip", { hasText: "8개" }).click();
   await frame.locator(".uu-chip", { hasText: "이미 구체적" }).click();
 
@@ -1376,6 +1386,8 @@ test("a contradiction informs but never blocks", async ({ page }) => {
 
 test("clearing one side clears the warning", async ({ page }) => {
   const frame = await open(page, LINKED);
+  // `specificity` is the fourth axis, so it starts folded away.
+  await frame.locator(".uu-more").click();
   await frame.locator(".uu-chip", { hasText: "8개" }).click();
   await frame.locator(".uu-chip", { hasText: "이미 구체적" }).click();
   await expect(frame.locator(".uu-clash").first()).toBeVisible();
@@ -1610,4 +1622,83 @@ test("a superseded widget cannot go ahead", async ({ page }) => {
   });
 
   await expect(frame.locator(".uu-btn", { hasText: "이대로 진행" })).toBeDisabled();
+});
+
+// ── opening with the first few decisions ───────────────────────────────────
+
+test("the list opens with three decisions and folds the rest", async ({ page }) => {
+  const frame = await open(page);
+
+  // Five axes in the fixture; the first three in declared order are shown.
+  await expect(frame.locator(".uu-list .uu-row[data-axis]")).toHaveCount(3);
+  await expect(frame.locator(".uu-list .uu-label").filter({ hasText: "털색" })).toBeVisible();
+  await expect(frame.locator(".uu-list .uu-label").filter({ hasText: "가로" })).toHaveCount(0);
+});
+
+test("the fold header carries a count and nothing else", async ({ page }) => {
+  const frame = await open(page);
+  const fold = frame.locator(".uu-more");
+
+  await expect(fold).toHaveText("결정 2개 더 보기");
+  // No progress reading of any kind beside it (P5, P6).
+  await expect(frame.locator(".uu-list")).not.toContainText("%");
+});
+
+test("opening it shows everything, and it folds back", async ({ page }) => {
+  const frame = await open(page);
+
+  await frame.locator(".uu-more").click();
+  await expect(frame.locator(".uu-list .uu-row[data-axis]")).toHaveCount(5);
+  await expect(frame.locator(".uu-list .uu-label").filter({ hasText: "가로" })).toBeVisible();
+
+  await frame.locator(".uu-more").click();
+  await expect(frame.locator(".uu-list .uu-row[data-axis]")).toHaveCount(3);
+});
+
+test("a decided axis stays out of the fold, wherever it sits", async ({ page }) => {
+  const frame = await open(page);
+
+  await frame.locator(".uu-more").click();
+  await frame.locator('.uu-row[data-axis="width"] input').fill("1024");
+  await frame.locator(".uu-more").click();
+
+  // Folding must not take away a value the user set — as far as they can tell
+  // that is losing it.
+  await expect(frame.locator(".uu-list .uu-label").filter({ hasText: "가로" })).toBeVisible();
+  await expect(prompt(frame)).toContainText("가로 1024px");
+});
+
+test("an axis handed to the AI also stays visible", async ({ page }) => {
+  const frame = await open(page);
+
+  await frame.locator(".uu-more").click();
+  await frame.locator('.uu-list .uu-row[data-axis="width"] .uu-delegate').click();
+  await frame.locator(".uu-more").click();
+
+  await expect(frame.locator(".uu-list .uu-label").filter({ hasText: "가로" })).toBeVisible();
+});
+
+test("a section with everything folded away draws no heading", async ({ page }) => {
+  const frame = await open(page);
+
+  // Three axes shown means the third section contributes none, so its heading
+  // would sit over an empty gap.
+  await expect(frame.locator(".uu-section-label")).toHaveText(["대상", "환경"]);
+  await frame.locator(".uu-more").click();
+  await expect(frame.locator(".uu-section-label")).toHaveText(["대상", "환경", "화면"]);
+});
+
+test("no fold at all when there is nothing to fold", async ({ page }) => {
+  const frame = await open(page, SMALL);
+
+  await expect(frame.locator(".uu-list .uu-row[data-axis]")).toHaveCount(2);
+  await expect(frame.locator(".uu-more")).toHaveCount(0);
+});
+
+test("the board still shows the whole structure", async ({ page }) => {
+  const frame = await open(page);
+  await boardTab(frame).click();
+
+  // The list folds; the board is the place you go to see the shape of it all.
+  await expect(frame.locator(".uu-card-row")).toHaveCount(5);
 });

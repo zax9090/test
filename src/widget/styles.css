@@ -1295,3 +1295,13 @@
     min-height: 44px;
   }
 }
+
+/*
+ * The list opens with three decisions and folds the rest. The header carries the
+ * count and nothing else — no bar, no percentage, no "that's enough" (P6). The
+ * structure board is deliberately exempt: its whole job is showing the shape of
+ * the request, so folding there would defeat it.
+ */
+.uu-fold.uu-more {
+  margin-top: 6px;
+}

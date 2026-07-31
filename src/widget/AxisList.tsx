@@ -89,6 +89,43 @@ function NewSection({ onAdd, t }: { onAdd: (label: string) => void; t: Strings }
   );
 }
 
+/**
+ * How many decisions the list opens with.
+ *
+ * Three, because the review found that a wall of them reads as homework rather
+ * than help. The rest are one click away and nothing is thrown out.
+ */
+const OPEN_WITH = 3;
+
+/**
+ * Which axes the list shows while it is folded.
+ *
+ * Taken in **declared order** rather than by an importance field. The model is
+ * already told to put the axis that changes the result most at the top of each
+ * section, so position already carries that judgement and no new one is asked
+ * for — which is the whole reason `core`/`extra` was removed. See
+ * docs/stage0-conflicts.md (C23).
+ *
+ * Three things are never folded away, whatever their position:
+ *  - an axis the user has already answered, because hiding their own value would
+ *    be losing it as far as they can tell
+ *  - an axis in a live contradiction, which is the one thing that needs looking at
+ *  - a user-added axis, which they put there on purpose
+ */
+function visibleWhileFolded(ordered: ResolvedAxis[], conflicts: ConflictReport[]): Set<string> {
+  const shown = new Set(ordered.slice(0, OPEN_WITH).map((r) => r.axis.id));
+
+  for (const entry of ordered) {
+    const touched = entry.status !== "unset" || entry.state.kind === "delegated";
+    const clashing = conflicts.some(
+      (c) => c.axisId === entry.axis.id || c.against.includes(entry.axis.id),
+    );
+    if (touched || clashing || entry.axis.origin === "user") shown.add(entry.axis.id);
+  }
+
+  return shown;
+}
+
 export function AxisList({
   sections,
   resolved,
@@ -110,64 +147,104 @@ export function AxisList({
   t,
 }: AxisListProps) {
   const byId = new Map(resolved.map((r) => [r.axis.id, r]));
+  const [expanded, setExpanded] = useState(false);
+
+  // Declared order, applicable only — an axis that does not apply is not a
+  // decision being withheld.
+  const ordered = sections
+    .flatMap((section) => section.axes)
+    .map((a) => byId.get(a.id))
+    .filter((r): r is ResolvedAxis => Boolean(r))
+    .filter((r) => r.applicable && !hidden.has(r.axis.id));
+
+  const visible = expanded ? null : visibleWhileFolded(ordered, conflicts);
+  const foldedAway = visible ? ordered.filter((r) => !visible.has(r.axis.id)).length : 0;
 
   return (
     <div className="uu-list">
-      {sections.map((section) => (
-        <div className="uu-section" key={section.id}>
-          {/* An unnamed section — the salvage path for a flat payload, and the
+      {sections.map((section) => {
+        const drawn = section.axes.filter(
+          (a) => byId.get(a.id)?.applicable && !hidden.has(a.id) && (!visible || visible.has(a.id)),
+        );
+        // While folded, a section whose axes are all folded away draws nothing —
+        // a heading over an empty gap reads as a rendering fault.
+        if (visible && drawn.length === 0) return null;
+
+        return (
+          <div className="uu-section" key={section.id}>
+            {/* An unnamed section — the salvage path for a flat payload, and the
               generic fallback — draws no heading rather than an empty one. */}
-          {section.label ? <h2 className="uu-section-label">{section.label}</h2> : null}
+            {section.label ? <h2 className="uu-section-label">{section.label}</h2> : null}
 
-          {section.axes.map((axis) => {
-            const r = byId.get(axis.id);
-            // An axis that no longer applies is not drawn. It is not a judgement
-            // about importance — it is a question this deliverable cannot answer.
-            if (!r || hidden.has(axis.id)) return null;
+            {section.axes.map((axis) => {
+              const r = byId.get(axis.id);
+              // An axis that no longer applies is not drawn. It is not a judgement
+              // about importance — it is a question this deliverable cannot answer.
+              if (!r || hidden.has(axis.id)) return null;
+              // Folded away for now. Still in the payload, still on the board, and
+              // one click from here.
+              if (visible && !visible.has(axis.id)) return null;
 
-            const clashes = conflicts.filter(
-              (c) => c.axisId === axis.id || c.against.includes(axis.id),
-            );
+              const clashes = conflicts.filter(
+                (c) => c.axisId === axis.id || c.against.includes(axis.id),
+              );
 
-            return (
-              <div key={axis.id}>
-                <AxisRow
-                  axis={axis}
-                  status={r.status}
-                  state={r.state}
-                  values={r.values}
-                  onChange={onChange}
-                  clashing={clashes.length > 0}
-                  {...(axis.origin === "user" ? { onRemove: onRemoveAxis } : {})}
-                  t={t}
-                />
+              return (
+                <div key={axis.id}>
+                  <AxisRow
+                    axis={axis}
+                    status={r.status}
+                    state={r.state}
+                    values={r.values}
+                    onChange={onChange}
+                    clashing={clashes.length > 0}
+                    {...(axis.origin === "user" ? { onRemove: onRemoveAxis } : {})}
+                    t={t}
+                  />
 
-                {/* Said where the choice was made, not at the end. Every
+                  {/* Said where the choice was made, not at the end. Every
                     contradiction seen in real use was "I did not know" — so this
                     informs and leaves the choice standing (P4). */}
-                {clashes.map((c) => (
-                  <div className="uu-clash" key={`${c.axisId}-${c.reason}`}>
-                    {c.reason}
-                  </div>
-                ))}
-              </div>
-            );
-          })}
+                  {clashes.map((c) => (
+                    <div className="uu-clash" key={`${c.axisId}-${c.reason}`}>
+                      {c.reason}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
 
-          {/*
+            {/*
             Adding inside the group is the point. Looking at background and
             lighting is what makes "humidity" occur to someone; a blank line at
             the bottom of the whole list does not.
           */}
-          <button
-            type="button"
-            className="uu-add uu-add-axis"
-            onClick={() => onAddAxis(section.id)}
-          >
-            {t.axisAdd}
-          </button>
-        </div>
-      ))}
+            <button
+              type="button"
+              className="uu-add uu-add-axis"
+              onClick={() => onAddAxis(section.id)}
+            >
+              {t.axisAdd}
+            </button>
+          </div>
+        );
+      })}
+
+      {/*
+        The count, and nothing else. No bar, no percentage, no "that's enough" —
+        the fold itself is the signal that there is an end (P6).
+      */}
+      {foldedAway > 0 ? (
+        <button type="button" className="uu-fold uu-more" onClick={() => setExpanded(true)}>
+          {t.more(foldedAway)}
+        </button>
+      ) : null}
+
+      {expanded ? (
+        <button type="button" className="uu-fold uu-more" onClick={() => setExpanded(false)}>
+          {t.less}
+        </button>
+      ) : null}
 
       {/* The way out when an item belongs to no group that exists yet. */}
       <NewSection onAdd={onAddSection} t={t} />
