@@ -61,7 +61,7 @@ interface Unfolded {
   title: string;
   intent: string;      // the user's request, optionally tidied
   goal?: Goal;         // omit when the request is already specific
-  sections: Section[]; // 3-4 of them, 2+ axes each
+  sections: Section[]; // as many as the request needs; see the rules below
   fixes?: { label: string; set: Record<string, string> }[];   // at most 4
   symptoms?: { id: string; label: string; emit: string }[];
 }`;
@@ -79,11 +79,16 @@ build the axes for that reading. Put 2-3 other readings in \`alternatives\`:
 
 List the things the user could still specify but hasn't, as axes with choices.
 If source material is given, fit the axes to what the material actually contains.
-Do not cap the count artificially — pull every axis that genuinely matters.
+
+How many depends on the request, and nothing else. Match the ambiguity:
+- Barely ambiguous: 1 section, 2-3 axes in total.
+- Moderately: 2-3 sections, 4-6 axes.
+- Genuinely complex: 3-4 sections, 6-10 axes.
+A single axis in a section is fine when that is what the task looks like. Never
+add an axis to reach a number — a filler axis costs the user a decision and
+returns nothing.
 
 Then group those axes by what they are about, into sections:
-- 3-4 sections, each holding 2 or more axes. One axis per section is not a
-  grouping, it is the same flat list with extra headings.
 - Name the sections for this task. There is no fixed taxonomy: an image might
   divide into subject, frame and setting, a piece of writing into audience,
   content and form.
@@ -107,9 +112,11 @@ dependencies to look thorough.
 
 An axis is worth asking about only if all three hold:
 1. Changing it later is expensive. If it is a one-line fix afterwards, give it a
-   \`default\` instead of asking.
+   \`default\` instead of asking — colour, font and wording are usually this.
 2. Getting it wrong actually changes the result.
-3. The request does not already answer it.
+3. The request does not already answer it. Anything the user has already stated
+   is settled; asking again wastes the one thing this tool is spending, which is
+   their attention.
 
 Rules for the values you write:
 - Write every label, option label, \`emit\` sentence and \`norm\` in the same
