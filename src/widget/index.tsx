@@ -26,6 +26,7 @@ import type { Locale } from "../lib/locale.js";
 import { strings } from "./i18n.js";
 import { AxisList } from "./AxisList.js";
 import { GoalField } from "./GoalField.js";
+import { LivePreview } from "./LivePreview.js";
 import { PresetBar, PresetSave, usePresets } from "./PresetBar.js";
 import { BoardView } from "./BoardView.js";
 import { Result } from "./Result.js";
@@ -126,6 +127,9 @@ function App() {
   const [presetReload, setPresetReload] = useState(0);
   // Which correction button filled the current values, if one did.
   const [fixApplied, setFixApplied] = useState<string | undefined>();
+  // Set by `proceed`, cleared once the send has actually gone out. The send has to
+  // wait a render: the delegation above must be in `state` before the text is built.
+  const [proceeding, setProceeding] = useState(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const width = useWidth(rootRef);
@@ -169,6 +173,13 @@ function App() {
   const conflicts = useMemo(
     () => (payload ? findConflicts(payload.unfolded, resolved) : []),
     [payload, resolved],
+  );
+
+  const openCount = useMemo(
+    () =>
+      resolved.filter((r) => r.applicable && r.status === "unset" && r.state.kind === "none")
+        .length,
+    [resolved],
   );
 
   const hidden = useMemo(
@@ -457,6 +468,28 @@ function App() {
     [callPreset, presetBusy, loadedFrom],
   );
 
+  /**
+   * Send without deciding the rest.
+   *
+   * The axes still blank are handed to the AI *explicitly* — pressing this is the
+   * user saying so, and the model should receive it as a decision rather than as
+   * a gap. Anything already standing in from a `default` or a preset is left
+   * alone: "go with this" means go with what is on screen, and those values are
+   * on screen.
+   */
+  const proceed = useCallback(() => {
+    setSelections((prev) => {
+      const next = { ...prev };
+      for (const entry of resolved) {
+        if (entry.applicable && entry.status === "unset" && entry.state.kind === "none") {
+          next[entry.axis.id] = { kind: "delegated" };
+        }
+      }
+      return next;
+    });
+    setProceeding(true);
+  }, [resolved]);
+
   const handleCopy = useCallback(async () => {
     const ok = await copyText(text);
     if (ok) setCopied(true);
@@ -490,6 +523,12 @@ function App() {
       await app.sendMessage({ role: "user", content: [{ type: "text", text }] });
     })();
   }, [app, payload, state, text, fixApplied]);
+
+  useEffect(() => {
+    if (!proceeding) return;
+    setProceeding(false);
+    handleSend();
+  }, [proceeding, handleSend]);
 
   useEffect(() => {
     if (!copied) return;
@@ -600,6 +639,18 @@ function App() {
           t={t}
         />
       </div>
+
+      {/* The effect of a choice belongs beside the choice. The result tab keeps
+          the full text, the count and the corrections. */}
+      {tab !== "result" ? (
+        <LivePreview
+          text={text}
+          openCount={openCount}
+          onProceed={proceed}
+          canProceed={Boolean(app) && !superseded}
+          t={t}
+        />
+      ) : null}
 
       <div hidden={tab !== "result"}>
         <Result

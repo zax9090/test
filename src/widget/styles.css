@@ -1205,3 +1205,93 @@
     margin-left: auto;
   }
 }
+
+/* ── what will be sent ────────────────────────────────────────────────── */
+
+/*
+ * The prompt, under whichever surface the user is working on. Separated from the
+ * controls above by a rule rather than by whitespace: unlike a section boundary
+ * this is a change of kind — everything above sets values, this reports them.
+ */
+.uu-live {
+  margin-top: 16px;
+  /* The same 2px inset the rows use, so the note on the right does not run into
+     the edge of the frame. */
+  padding: 12px 2px 0;
+  border-top: 1px solid var(--color-border-primary, rgba(128, 128, 128, 0.28));
+}
+
+.uu-live-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.uu-live-label {
+  font-size: var(--font-text-xs-size, 11.5px);
+  font-weight: var(--font-weight-semibold, 600);
+  letter-spacing: 0.02em;
+  color: var(--color-text-secondary, inherit);
+  opacity: 0.75;
+}
+
+/*
+ * One statement of what happens on send. Not a progress reading — there is no
+ * bar, no percentage and no target, and it disappears entirely once nothing is
+ * blank rather than turning into a completion notice (P5).
+ */
+.uu-live-note {
+  flex: 0 0 auto;
+  font-size: var(--font-text-xs-size, 11.5px);
+  color: var(--color-text-tertiary, inherit);
+  opacity: 0.7;
+  text-align: right;
+}
+
+/*
+ * Clamped, because this is a readout. The result tab holds the whole thing, so
+ * a long prompt is never stranded behind these few lines.
+ */
+.uu-live-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--font-text-xs-size, 11.5px);
+  line-height: 1.55;
+  color: var(--color-text-secondary, inherit);
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.uu-live-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+/*
+ * The one emphasised control in the widget. It earns that by being the answer to
+ * "am I allowed to stop now?", which nothing on screen previously answered.
+ * Emphasis is a border and weight — still no fill colour of our own.
+ */
+.uu-btn.is-primary {
+  border-color: currentColor;
+  font-weight: var(--font-weight-medium, 500);
+  min-height: 36px;
+}
+
+@media (max-width: 420px) {
+  .uu-live-head {
+    flex-wrap: wrap;
+  }
+
+  .uu-live-actions .uu-btn.is-primary {
+    width: 100%;
+    min-height: 44px;
+  }
+}

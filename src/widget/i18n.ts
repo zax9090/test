@@ -72,6 +72,8 @@ export interface Strings {
   delegate: string;
   undelegate: string;
   proceed: string;
+  livePreview: string;
+  openLeft: (n: number) => string;
 }
 
 const ko: Strings = {
@@ -136,6 +138,8 @@ const ko: Strings = {
   delegate: "AI에 맡기기",
   undelegate: "직접 정하기",
   proceed: "이대로 진행",
+  livePreview: "지금 보낼 내용",
+  openLeft: (n) => `안 정한 ${n}개는 AI가 알아서 합니다`,
 };
 
 const en: Strings = {
@@ -201,6 +205,8 @@ const en: Strings = {
   delegate: "Leave to the AI",
   undelegate: "Decide myself",
   proceed: "Go with this",
+  livePreview: "What will be sent",
+  openLeft: (n) => `The ${n} left blank go to the AI`,
 };
 
 export function strings(locale: Locale): Strings {

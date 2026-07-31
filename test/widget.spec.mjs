@@ -1513,3 +1513,101 @@ test("the structure sent to the model separates delegated from untouched", async
   expect(report.untouched).not.toContain("pose");
   expect(report.untouched).toContain("coat");
 });
+
+// ── the prompt, beside the choices ─────────────────────────────────────────
+
+const live = (frame) => frame.locator(".uu-live-text");
+
+test("the prompt is on the same screen as the choices", async ({ page }) => {
+  const frame = await open(page);
+
+  // No tab switch needed to see what a choice did.
+  await expect(live(frame)).toContainText("고양이 이미지 만들어줘");
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await expect(live(frame)).toContainText("털색은 검은색");
+});
+
+test("it follows the board too, and agrees with the result tab", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+
+  await boardTab(frame).click();
+  await expect(live(frame)).toContainText("털색은 검은색");
+
+  // The result tab owns the full text, so the readout steps aside there.
+  await resultTab(frame).click();
+  await expect(frame.locator(".uu-live")).toHaveCount(0);
+  await expect(prompt(frame)).toContainText("털색은 검은색");
+});
+
+test("it says what happens to the axes left blank", async ({ page }) => {
+  const frame = await open(page);
+
+  // Four axes are blank at the start; `light` carries a default and is not one.
+  await expect(frame.locator(".uu-live-note")).toContainText("AI가 알아서");
+
+  const before = await frame.locator(".uu-live-note").innerText();
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await expect(frame.locator(".uu-live-note")).not.toHaveText(before);
+});
+
+test("the note disappears rather than becoming a completion notice", async ({ page }) => {
+  const frame = await open(page, SMALL);
+
+  await frame.locator(".uu-chip", { hasText: "시간순" }).click();
+  await frame.locator('.uu-row[data-axis="length"] input').fill("5");
+
+  // Nothing blank left, so it says nothing at all — no "done", no 100% (P5).
+  await expect(frame.locator(".uu-live-note")).toHaveCount(0);
+});
+
+test("go with this sends without deciding the rest", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+
+  await frame.locator(".uu-btn", { hasText: "이대로 진행" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
+
+  const sent = await page.evaluate(() => window.__harness.sent[0]);
+  expect(sent.text).toContain("털색은 검은색");
+});
+
+test("going ahead hands the blank axes over as a decision", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-chip", { hasText: "검정" }).click();
+  await frame.locator(".uu-btn", { hasText: "이대로 진행" }).click();
+
+  await expect.poll(() => page.evaluate(() => window.__harness.structured.length)).toBe(1);
+  const report = await page.evaluate(() => window.__harness.structured[0]);
+
+  // Pressing it *is* the user saying "the rest is up to you", so the model gets
+  // a decision rather than a gap.
+  expect(report.delegated).toContain("pose");
+  expect(report.untouched).toEqual([]);
+  expect(report.chosen.coat.value).toBe("black");
+});
+
+test("going ahead keeps a value that was standing in", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator(".uu-btn", { hasText: "이대로 진행" }).click();
+  await expect.poll(() => page.evaluate(() => window.__harness.sent.length)).toBe(1);
+
+  // "Go with this" means what is on screen, and a default is on screen.
+  const sent = await page.evaluate(() => window.__harness.sent[0]);
+  expect(sent.text).toContain("부드러운 조명을 쓴다.");
+
+  const report = await page.evaluate(() => window.__harness.structured[0]);
+  expect(Object.keys(report.standIn)).toContain("light");
+  expect(report.delegated).not.toContain("light");
+});
+
+test("a superseded widget cannot go ahead", async ({ page }) => {
+  const frame = await open(page);
+  await page.evaluate(() => {
+    const bc = new BroadcastChannel("unknown-unknowns");
+    bc.postMessage({ seq: Number.MAX_SAFE_INTEGER });
+    bc.close();
+  });
+
+  await expect(frame.locator(".uu-btn", { hasText: "이대로 진행" })).toBeDisabled();
+});
